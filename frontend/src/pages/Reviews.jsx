@@ -178,6 +178,8 @@ export function Reviews() {
                         >
                             <option value="all">All Statuses ({reviews.length})</option>
                             <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="published">Published</option>
                             <option value="replied">Replied</option>
                             <option value="rejected">Rejected</option>
                         </select>

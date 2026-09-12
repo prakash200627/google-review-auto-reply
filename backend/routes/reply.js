@@ -67,7 +67,7 @@ router.post("/approve", authMiddleware, async (req, res) => {
         await reply.save();
 
         // Update review status to reflect replied state
-        review.status = "replied";
+        review.status = "approved";
         await review.save();
 
         // Send approved reply to Make.com webhook
@@ -82,10 +82,13 @@ router.post("/approve", authMiddleware, async (req, res) => {
         }
         try {
             await axios.post(webhookUrl, {
-                reviewId: review._id,
-                orgId: review.orgId,
-                finalReply: approvedReply,
+                reviewId: review.googleReviewId || review._id,
+                reviewerName: review.reviewerName,
+                rating: review.rating,
+                comment: review.text,
                 googleResourceName: review.googleResourceName,
+                finalReply: approvedReply,
+                orgId: review.orgId,
             });
         } catch (err) {
             console.error("Failed to call Make.com webhook:", err.message);

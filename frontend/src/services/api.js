@@ -48,6 +48,21 @@ export const authService = {
     },
 };
 
+export const organizationService = {
+    getMode: async () => {
+        const res = await api.get("/organization/mode");
+        return res.data;
+    },
+    updateMode: async (mode) => {
+        const res = await api.patch("/organization/mode", { mode });
+        return res.data;
+    },
+    getMe: async () => {
+        const res = await api.get("/organization/me");
+        return res.data;
+    },
+};
+
 export const statsService = {
     getStats: async () => {
         const res = await api.get("/stats");

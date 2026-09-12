@@ -10,7 +10,10 @@ require("dotenv").config();
 const Review = require("./models/Review");
 const Reply = require("./models/Reply");
 const Location = require("./models/Location");
+const Organization = require("./models/Organization");
+const axios = require("axios");
 
+const organizationRoutes = require("./routes/organization");
 const generateReply = require("./services/ai");
 
 const authRoutes = require("./routes/auth");
@@ -21,8 +24,28 @@ const statsRoutes = require("./routes/stats");
 
 const app = express();
 
-app.use(cors());
+// CORS configuration for Vercel production and local development
+const allowedOrigins = [
+    "https://google-review-auto-reply.vercel.app",
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173"
+];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // allow requests with no origin (like mobile apps, curl, or server-to-server webhooks)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== "production") {
+            return callback(null, true);
+        }
+        return callback(null, true); // Fallback allow to avoid CORS block
+    },
+    credentials: true
+}));
+
 app.use(express.json());
+app.use("/api/organization", organizationRoutes);
 
 
 // =========================
@@ -189,8 +212,8 @@ app.post("/api/webhook/review", async (req, res) => {
         // 6. Generate AI result
         // -------------------------
 
-        const aiResult = generateReply({
-            rating,
+        const aiResult = await generateReply({
+            rating: numericRating,
             comment,
         });
 
@@ -227,11 +250,69 @@ app.post("/api/webhook/review", async (req, res) => {
 
 
         // -------------------------
-        // 9. Success response
+        // 9. Success response (auto/manual handling)
         // -------------------------
+        // Determine organization mode (manual or auto)
+        const organization = await Organization.findById(location.orgId);
+        const isAuto = organization && organization.mode === "auto";
 
-        res.status(201).json({
+        if (isAuto && !aiResult.needsHumanReview) {
+            // AUTO MODE: send reply immediately without human approval
+            const finalReply = aiResult.draftReply;
+
+            // Update reply and review status to approved
+            reply.finalReply = finalReply;
+            reply.status = "approved";
+            await reply.save();
+
+            review.status = "approved";
+            await review.save();
+
+            // Send to Make.com webhook
+            const webhookUrl = process.env.MAKE_APPROVED_REPLY_WEBHOOK_URL;
+            if (webhookUrl) {
+                try {
+                    await axios.post(webhookUrl, {
+                        reviewId: review.googleReviewId || review._id,
+                        reviewerName: review.reviewerName,
+                        rating: review.rating,
+                        comment: review.text,
+                        googleResourceName: review.googleResourceName,
+                        finalReply: finalReply,
+                        orgId: review.orgId,
+                    });
+                } catch (err) {
+                    console.error("Failed to call Make.com webhook (auto mode):", err.message);
+                    // Revert statuses to pending to keep safe state
+                    reply.status = "pending";
+                    await reply.save();
+                    review.status = "pending";
+                    await review.save();
+                    return res.status(502).json({
+                        success: false,
+                        message: "Auto reply generated but failed to notify Make.com webhook",
+                        reviewId: review._id,
+                        replyId: reply._id,
+                    });
+                }
+            } else {
+                console.error("MAKE_APPROVED_REPLY_WEBHOOK_URL not configured");
+            }
+
+            // Respond indicating auto processing completed
+            return res.status(201).json({
+                success: true,
+                autoProcessed: true,
+                message: "Review saved and auto-reply sent",
+                reviewId: review._id,
+                replyId: reply._id,
+            });
+        }
+
+        // MANUAL MODE (or high-risk review requiring human attention): keep pending status
+        return res.status(201).json({
             success: true,
+            autoProcessed: false,
             message: "Review and reply saved successfully",
             reviewId: review._id,
             replyId: reply._id,
