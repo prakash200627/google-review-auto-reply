@@ -12,6 +12,7 @@ export function Dashboard() {
     const { user } = useAuth();
     const [stats, setStats] = useState(null);
     const [recentPending, setRecentPending] = useState([]);
+    const [analysis, setAnalysis] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
@@ -19,9 +20,13 @@ export function Dashboard() {
         setLoading(true);
         setError(null);
         try {
-            const [statsData, pendingData] = await Promise.all([
+            const [statsData, pendingData, analysisData] = await Promise.all([
                 statsService.getStats(),
                 reviewsService.getPending(),
+                statsService.getAnalysis().catch((err) => {
+                    console.warn("AI analysis unavailable:", err?.message || err);
+                    return null;
+                }),
             ]);
 
             if (statsData.success) {
@@ -29,6 +34,9 @@ export function Dashboard() {
             }
             if (pendingData.success && pendingData.reviews) {
                 setRecentPending(pendingData.reviews.slice(0, 3));
+            }
+            if (analysisData && analysisData.success) {
+                setAnalysis(analysisData);
             }
         } catch (err) {
             setError(
@@ -190,6 +198,29 @@ export function Dashboard() {
                     />
                 </div>
             </div>
+
+            {/* AI Review Summary & Analysis */}
+            {analysis && (
+                <div className="stats-section">
+                    <h3 className="subheading">AI Review Summary &amp; Analysis</h3>
+                    <div className="stat-card" style={{ padding: '1.25rem' }}>
+                        <div className="stat-card-header">
+                            <span className="stat-card-title">&#x1F9E0; Executive Intelligence Summary</span>
+                            <span className={analysis?.usedOpenAI ? "badge badge-status-approved" : "badge badge-status-neutral"}>
+                                {analysis?.usedOpenAI ? "✨ Powered by OpenAI" : "🤖 Automated Summary"}
+                            </span>
+                        </div>
+                        <div style={{ marginTop: '0.75rem', fontSize: '0.92rem', lineHeight: '1.6', color: 'var(--text-primary)' }}>
+                            <p style={{ margin: 0 }}>
+                                {analysis?.analysis || analysis?.summary || (typeof analysis === 'string' ? analysis : "No review summary available.")}
+                            </p>
+                            <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                Engine: {analysis?.usedOpenAI ? "OpenAI gpt-5-mini" : "System Sentiment Analyzer"}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Quick Preview of Pending Reviews */}
             {recentPending.length > 0 && (

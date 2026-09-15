@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export function Sidebar({ pendingCount }) {
-    const { user, logout } = useAuth();
+    const { user } = useAuth();
 
     return (
         <aside className="sidebar">
@@ -57,14 +57,6 @@ export function Sidebar({ pendingCount }) {
                         <span className="user-email">{user?.email || "Account"}</span>
                         <span className="user-voice">Voice: {user?.brandVoice || "friendly"}</span>
                     </div>
-                    <button
-                        type="button"
-                        className="btn-sidebar-logout"
-                        onClick={logout}
-                        title="Sign Out"
-                    >
-                        &#x1F6AA;
-                    </button>
                 </div>
             </div>
         </aside>
