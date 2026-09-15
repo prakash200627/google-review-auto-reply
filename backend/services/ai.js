@@ -199,7 +199,7 @@ async function generateAnalysis(orgId) {
             const response = await openai.chat.completions.create({
                 model: "gpt-5-mini",
                 messages: [{ role: "user", content: prompt }],
-                max_tokens: 150,
+                max_completion_tokens: 150,
             });
 
             if (response && response.choices && response.choices[0]?.message?.content) {
