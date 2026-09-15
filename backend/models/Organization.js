@@ -34,6 +34,17 @@ const organizationSchema = new mongoose.Schema(
             type: String,
             default: "English",
         },
+
+        openaiApiKey: {
+            type: String,
+            default: null,
+            select: false,
+        },
+
+        openaiEnabled: {
+            type: Boolean,
+            default: true,
+        },
     },
     {
         timestamps: true,

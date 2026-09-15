@@ -58,7 +58,7 @@ export function Dashboard() {
             <div className="page-header-row">
                 <div>
                     <h2 className="section-title">
-                        Welcome back, {user?.name || "Organization"}! 👋
+                        Welcome back, {user?.name || "Organization"}! &#x1F44B;
                     </h2>
                     <p className="section-subtitle">
                         Here is an overview of your Google review metrics, response drafts, and pending approvals.
@@ -69,7 +69,7 @@ export function Dashboard() {
                     className="btn btn-secondary btn-refresh"
                     onClick={loadDashboardData}
                 >
-                    🔄 Refresh Data
+                    &#x1F504; Refresh Data
                 </button>
             </div>
 
@@ -77,27 +77,27 @@ export function Dashboard() {
             {stats && stats.pendingReviews > 0 && (
                 <div className="alert-banner-inbox">
                     <div className="alert-banner-content">
-                        <span className="alert-banner-icon">⚡</span>
+                        <span className="alert-banner-icon">&#x26A1;</span>
                         <div>
                             <strong>{stats.pendingReviews} review{stats.pendingReviews > 1 ? "s" : ""} waiting for your response!</strong>
                             <p>AI draft replies are ready for review, edit, or approval.</p>
                         </div>
                     </div>
                     <Link to="/pending" className="btn btn-primary btn-sm">
-                        Go to Inbox →
+                        Go to Inbox &#x2192;
                     </Link>
                 </div>
             )}
 
             {/* Core Review Stats Grid */}
             <div className="stats-section">
-                <h3 className="subheading">Review Volume & Pipeline</h3>
+                <h3 className="subheading">Review Volume &amp; Pipeline</h3>
                 <div className="stats-grid">
                     <StatCard
                         title="Total Reviews"
                         value={stats?.totalReviews}
                         subtitle="All Google reviews received"
-                        icon="⭐"
+                        icon="&#x2B50;"
                         variant="primary"
                         onClick={() => navigate("/reviews")}
                     />
@@ -105,7 +105,7 @@ export function Dashboard() {
                         title="Pending Reviews"
                         value={stats?.pendingReviews}
                         subtitle="Awaiting approval / action"
-                        icon="⏳"
+                        icon="&#x23F3;"
                         variant="warning"
                         onClick={() => navigate("/pending")}
                     />
@@ -113,7 +113,7 @@ export function Dashboard() {
                         title="Replied Reviews"
                         value={stats?.repliedReviews}
                         subtitle="Replies approved / handled"
-                        icon="✅"
+                        icon="&#x2705;"
                         variant="success"
                         onClick={() => navigate("/reviews")}
                     />
@@ -121,7 +121,7 @@ export function Dashboard() {
                         title="Rejected Reviews"
                         value={stats?.rejectedReviews}
                         subtitle="Drafts dismissed by user"
-                        icon="🚫"
+                        icon="&#x1F6AB;"
                         variant="danger"
                         onClick={() => navigate("/reviews")}
                     />
@@ -135,22 +135,22 @@ export function Dashboard() {
                     <StatCard
                         title="Positive Reviews"
                         value={stats?.positiveReviews}
-                        subtitle="4 & 5-star customer feedback"
-                        icon="🟢"
+                        subtitle="4 &amp; 5-star customer feedback"
+                        icon="&#x1F7E2;"
                         variant="success"
                     />
                     <StatCard
                         title="Neutral Reviews"
                         value={stats?.neutralReviews}
                         subtitle="3-star balanced feedback"
-                        icon="⚪"
+                        icon="&#x26AA;"
                         variant="default"
                     />
                     <StatCard
                         title="Negative Reviews"
                         value={stats?.negativeReviews}
-                        subtitle="1 & 2-star feedback"
-                        icon="🔴"
+                        subtitle="1 &amp; 2-star feedback"
+                        icon="&#x1F534;"
                         variant="danger"
                     />
                 </div>
@@ -164,28 +164,28 @@ export function Dashboard() {
                         title="Total Replies Drafted"
                         value={stats?.totalReplies}
                         subtitle="Generated by AI service"
-                        icon="🤖"
+                        icon="&#x1F916;"
                         variant="primary"
                     />
                     <StatCard
                         title="Approved Replies"
                         value={stats?.approvedReplies}
                         subtitle="Validated and confirmed"
-                        icon="👍"
+                        icon="&#x1F44D;"
                         variant="success"
                     />
                     <StatCard
                         title="Rejected Replies"
                         value={stats?.rejectedReplies}
                         subtitle="Declined by operator"
-                        icon="✕"
+                        icon="&#x2715;"
                         variant="danger"
                     />
                     <StatCard
                         title="Published to Google"
                         value={stats?.publishedReplies}
                         subtitle="Live on Google Maps"
-                        icon="🚀"
+                        icon="&#x1F680;"
                         variant="info"
                     />
                 </div>
@@ -200,7 +200,7 @@ export function Dashboard() {
                             <p className="text-muted">Top reviews currently waiting for decision</p>
                         </div>
                         <Link to="/pending" className="link-see-all">
-                            View All ({stats?.pendingReviews || recentPending.length}) →
+                            View All ({stats?.pendingReviews || recentPending.length}) &#x2192;
                         </Link>
                     </div>
 

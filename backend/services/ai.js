@@ -1,6 +1,9 @@
-async function generateReply(review) {
-    const rawRating = review.rating;
-    const comment = review.comment || "";
+const Organization = require("../models/Organization");
+const Review = require("../models/Review");
+
+async function generateReply(review, orgId = null) {
+    const rawRating = review ? review.rating : null;
+    const comment = review ? (review.comment || review.text || "") : "";
 
     // Normalize rating to numeric value 1-5
     const ratingMap = {
@@ -41,17 +44,43 @@ async function generateReply(review) {
         needsHumanReview = true;
     }
 
-    // 1. Try OpenAI if key is present
-    if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim() !== "") {
+    // Determine API Key & Enabled status
+    let apiKeyToUse = null;
+    let openAiDisabled = false;
+
+    if (orgId) {
+        try {
+            const org = await Organization.findById(orgId).select("+openaiApiKey");
+            if (org) {
+                if (org.openaiEnabled === false) {
+                    openAiDisabled = true;
+                } else if (org.openaiApiKey && org.openaiApiKey.trim() !== "") {
+                    apiKeyToUse = org.openaiApiKey.trim();
+                }
+            }
+        } catch (err) {
+            console.error("Error fetching organization OpenAI settings:", err.message);
+        }
+    }
+
+    // Fallback to environment variable if org key not present and OpenAI not disabled
+    if (!apiKeyToUse && !openAiDisabled) {
+        if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim() !== "") {
+            apiKeyToUse = process.env.OPENAI_API_KEY.trim();
+        }
+    }
+
+    // 1. Try OpenAI if key is available and OpenAI usage is enabled
+    if (apiKeyToUse && !openAiDisabled) {
         try {
             const { OpenAI } = require("openai");
-            const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY.trim() });
+            const openai = new OpenAI({ apiKey: apiKeyToUse });
             const prompt = `You are a professional customer relation manager. Generate a polite, empathetic Google review reply for a ${numericRating}-star rating with customer comment: "${comment}". Keep it under 150 words.`;
-            
+
             const response = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
+                model: "gpt-5-mini",
                 messages: [{ role: "user", content: prompt }],
-                max_tokens: 150,
+                max_completion_tokens: 150,
             });
 
             if (response && response.choices && response.choices[0]?.message?.content) {
@@ -59,11 +88,15 @@ async function generateReply(review) {
                 usedOpenAI = true;
             }
         } catch (err) {
-            console.error("OpenAI generation failed, falling back to mock reply:", err.message);
+            let sanitizedMsg = err.message || "OpenAI API call failed";
+            if (apiKeyToUse && typeof apiKeyToUse === "string") {
+                sanitizedMsg = sanitizedMsg.split(apiKeyToUse).join("[REDACTED]");
+            }
+            console.error("OpenAI generation failed, falling back to safe fallback reply:", sanitizedMsg);
         }
     }
 
-    // 2. Fallback mock implementation if OpenAI was not used or failed
+    // 2. Safe fallback implementation if OpenAI was not used or failed
     if (!draftReply) {
         if (numericRating >= 4) {
             draftReply =
@@ -108,4 +141,88 @@ async function generateReply(review) {
     return { sentiment, draftReply, needsHumanReview, urgency, usedOpenAI };
 }
 
+async function generateAnalysis(orgId) {
+    let reviews = [];
+    if (orgId) {
+        try {
+            reviews = await Review.find({ orgId }).sort({ createdAt: -1 }).limit(20);
+        } catch (err) {
+            console.error("Error fetching reviews for AI analysis:", err.message);
+        }
+    }
+
+    const totalCount = reviews.length;
+    const positiveCount = reviews.filter((r) => r.sentiment === "positive" || r.rating >= 4).length;
+    const neutralCount = reviews.filter((r) => r.sentiment === "neutral" || r.rating === 3).length;
+    const negativeCount = reviews.filter((r) => r.sentiment === "negative" || r.rating <= 2).length;
+
+    const positivePct = totalCount > 0 ? Math.round((positiveCount / totalCount) * 100) : 100;
+
+    let fallbackSummary = totalCount > 0
+        ? `Analysis of ${totalCount} recent review${totalCount === 1 ? "" : "s"}: ${positivePct}% positive customer sentiment (${positiveCount} positive, ${neutralCount} neutral, ${negativeCount} negative). Customer satisfaction remains strong with high rating consistency.`
+        : "No review data available yet for AI sentiment analysis. Once customer reviews are ingested, insights will appear here.";
+
+    let apiKeyToUse = null;
+    let openAiDisabled = false;
+
+    if (orgId) {
+        try {
+            const org = await Organization.findById(orgId).select("+openaiApiKey");
+            if (org) {
+                if (org.openaiEnabled === false) {
+                    openAiDisabled = true;
+                } else if (org.openaiApiKey && org.openaiApiKey.trim() !== "") {
+                    apiKeyToUse = org.openaiApiKey.trim();
+                }
+            }
+        } catch (err) {
+            console.error("Error fetching org config for AI analysis:", err.message);
+        }
+    }
+
+    if (!apiKeyToUse && !openAiDisabled) {
+        if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim() !== "") {
+            apiKeyToUse = process.env.OPENAI_API_KEY.trim();
+        }
+    }
+
+    if (apiKeyToUse && !openAiDisabled && totalCount > 0) {
+        try {
+            const { OpenAI } = require("openai");
+            const openai = new OpenAI({ apiKey: apiKeyToUse });
+            const commentsText = reviews
+                .map((r) => `[Rating ${r.rating}/5]: "${r.text || "No text provided"}"`)
+                .join("\n");
+
+            const prompt = `Analyze ${totalCount === 1 ? "this 1 customer review" : `these ${totalCount} customer reviews`} and provide a concise 2-3 sentence executive summary of overall sentiment, key customer praise, and main complaints:\n\n${commentsText}`;
+
+            const response = await openai.chat.completions.create({
+                model: "gpt-5-mini",
+                messages: [{ role: "user", content: prompt }],
+                max_tokens: 150,
+            });
+
+            if (response && response.choices && response.choices[0]?.message?.content) {
+                return {
+                    summary: response.choices[0].message.content.trim(),
+                    usedOpenAI: true,
+                };
+            }
+        } catch (err) {
+            let sanitizedMsg = err.message || "OpenAI API call failed";
+            if (apiKeyToUse && typeof apiKeyToUse === "string") {
+                sanitizedMsg = sanitizedMsg.split(apiKeyToUse).join("[REDACTED]");
+            }
+            console.error("OpenAI analysis failed, using fallback:", sanitizedMsg);
+        }
+    }
+
+    return {
+        summary: fallbackSummary,
+        usedOpenAI: false,
+    };
+}
+
 module.exports = generateReply;
+module.exports.generateReply = generateReply;
+module.exports.generateAnalysis = generateAnalysis;

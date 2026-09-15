@@ -21,6 +21,8 @@ const locationRoutes = require("./routes/location");
 const reviewsRoutes = require("./routes/reviews");
 const replyRoutes = require("./routes/reply");
 const statsRoutes = require("./routes/stats");
+// Import temporary test AI route
+
 
 const app = express();
 
@@ -29,7 +31,7 @@ const allowedOrigins = [
     "https://google-review-auto-reply.vercel.app",
     "http://localhost:5173",
     "http://localhost:3000",
-    "http://127.0.0.1:5173"
+    "http://127.0.0.1:5173",
 ];
 
 app.use(cors({
@@ -41,12 +43,11 @@ app.use(cors({
         }
         return callback(null, true); // Fallback allow to avoid CORS block
     },
-    credentials: true
+    credentials: true,
 }));
 
 app.use(express.json());
 app.use("/api/organization", organizationRoutes);
-
 
 // =========================
 // Routes
@@ -57,6 +58,8 @@ app.use("/api/locations", locationRoutes);
 app.use("/api/reviews", reviewsRoutes);
 app.use("/api/reply", replyRoutes);
 app.use("/api/stats", statsRoutes);
+// Mount temporary test route under /api
+
 
 // =========================
 // Health Check
@@ -67,7 +70,6 @@ app.get("/", (req, res) => {
         message: "Google Review Auto-Reply Backend is running",
     });
 });
-
 
 // =========================
 // Google Review Webhook
@@ -86,7 +88,6 @@ app.post("/api/webhook/review", async (req, res) => {
             googleResourceName,
         } = req.body;
 
-
         // -------------------------
         // 1. Validate input
         // -------------------------
@@ -94,26 +95,18 @@ app.post("/api/webhook/review", async (req, res) => {
         if (!reviewId || !rating || !googleResourceName) {
             return res.status(400).json({
                 success: false,
-                message:
-                    "reviewId, rating and googleResourceName are required",
+                message: "reviewId, rating and googleResourceName are required",
             });
         }
-
 
         // -------------------------
         // 2. Extract Google Location ID
         // -------------------------
 
-        const locationMatch = googleResourceName.match(
-            /\/locations\/([^/]+)\/reviews\//
-        );
+        const locationMatch = googleResourceName.match(/\/locations\/([^/]+)\/reviews\//);
 
         if (!locationMatch) {
-            console.error(
-                "Could not extract Google Location ID from:",
-                googleResourceName
-            );
-
+            console.error("Could not extract Google Location ID from:", googleResourceName);
             return res.status(400).json({
                 success: false,
                 message: "Invalid Google resource name",
@@ -121,24 +114,15 @@ app.post("/api/webhook/review", async (req, res) => {
         }
 
         const googleLocationId = locationMatch[1];
-
         console.log("Google Location ID:", googleLocationId);
-
 
         // -------------------------
         // 3. Find our Location
         // -------------------------
 
-        const location = await Location.findOne({
-            googleLocationId,
-        });
-
+        const location = await Location.findOne({ googleLocationId });
         if (!location) {
-            console.error(
-                "Location not found in database:",
-                googleLocationId
-            );
-
+            console.error("Location not found in database:", googleLocationId);
             return res.status(404).json({
                 success: false,
                 message: "Google location is not registered",
@@ -149,30 +133,20 @@ app.post("/api/webhook/review", async (req, res) => {
         console.log("Location found:", location._id);
         console.log("Organization:", location.orgId);
 
-
         // -------------------------
         // 4. Check duplicate review
         // -------------------------
 
-        const existingReview = await Review.findOne({
-            googleReviewId: reviewId,
-        });
-
+        const existingReview = await Review.findOne({ googleReviewId: reviewId });
         if (existingReview) {
-            // Update reviewer name if it was missing before
             if (reviewerName && !existingReview.reviewerName) {
                 existingReview.reviewerName = reviewerName;
             }
-            // Update googleResourceName if missing and provided
             if (googleResourceName && !existingReview.googleResourceName) {
                 existingReview.googleResourceName = googleResourceName;
             }
             await existingReview.save();
-
-            const existingReply = await Reply.findOne({
-                reviewId: existingReview._id,
-            });
-
+            const existingReply = await Reply.findOne({ reviewId: existingReview._id });
             return res.status(200).json({
                 success: true,
                 message: "Review already exists",
@@ -181,47 +155,26 @@ app.post("/api/webhook/review", async (req, res) => {
             });
         }
 
-
         // -------------------------
         // 5. Convert Google rating
         // -------------------------
 
-        const ratingMap = {
-            ONE: 1,
-            TWO: 2,
-            THREE: 3,
-            FOUR: 4,
-            FIVE: 5,
-        };
-
+        const ratingMap = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
         const numericRating =
             ratingMap[rating] ||
-            (typeof rating === "number" && rating >= 1 && rating <= 5
-                ? rating
-                : null);
-
+            (typeof rating === "number" && rating >= 1 && rating <= 5 ? rating : null);
         if (!numericRating) {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid Google star rating",
-            });
+            return res.status(400).json({ success: false, message: "Invalid Google star rating" });
         }
-
 
         // -------------------------
         // 6. Generate AI result
         // -------------------------
-
-        const aiResult = await generateReply({
-            rating: numericRating,
-            comment,
-        });
-
+        const aiResult = await generateReply({ rating: numericRating, comment }, location.orgId);
 
         // -------------------------
         // 7. Save Review
         // -------------------------
-
         const review = await Review.create({
             orgId: location.orgId,
             locationId: location._id,
@@ -231,14 +184,12 @@ app.post("/api/webhook/review", async (req, res) => {
             text: comment || "",
             sentiment: aiResult.sentiment,
             status: "pending",
-            googleResourceName: googleResourceName,
+            googleResourceName,
         });
-
 
         // -------------------------
         // 8. Save Reply
         // -------------------------
-
         const reply = await Reply.create({
             reviewId: review._id,
             orgId: location.orgId,
@@ -248,27 +199,19 @@ app.post("/api/webhook/review", async (req, res) => {
             status: "pending",
         });
 
-
         // -------------------------
         // 9. Success response (auto/manual handling)
         // -------------------------
-        // Determine organization mode (manual or auto)
         const organization = await Organization.findById(location.orgId);
         const isAuto = organization && organization.mode === "auto";
 
         if (isAuto && !aiResult.needsHumanReview) {
-            // AUTO MODE: send reply immediately without human approval
             const finalReply = aiResult.draftReply;
-
-            // Update reply and review status to approved
             reply.finalReply = finalReply;
             reply.status = "approved";
             await reply.save();
-
             review.status = "approved";
             await review.save();
-
-            // Send to Make.com webhook
             const webhookUrl = process.env.MAKE_APPROVED_REPLY_WEBHOOK_URL;
             if (webhookUrl) {
                 try {
@@ -278,12 +221,11 @@ app.post("/api/webhook/review", async (req, res) => {
                         rating: review.rating,
                         comment: review.text,
                         googleResourceName: review.googleResourceName,
-                        finalReply: finalReply,
+                        finalReply,
                         orgId: review.orgId,
                     });
                 } catch (err) {
                     console.error("Failed to call Make.com webhook (auto mode):", err.message);
-                    // Revert statuses to pending to keep safe state
                     reply.status = "pending";
                     await reply.save();
                     review.status = "pending";
@@ -298,8 +240,6 @@ app.post("/api/webhook/review", async (req, res) => {
             } else {
                 console.error("MAKE_APPROVED_REPLY_WEBHOOK_URL not configured");
             }
-
-            // Respond indicating auto processing completed
             return res.status(201).json({
                 success: true,
                 autoProcessed: true,
@@ -309,7 +249,7 @@ app.post("/api/webhook/review", async (req, res) => {
             });
         }
 
-        // MANUAL MODE (or high-risk review requiring human attention): keep pending status
+        // Manual or high‑risk path
         return res.status(201).json({
             success: true,
             autoProcessed: false,
@@ -317,42 +257,26 @@ app.post("/api/webhook/review", async (req, res) => {
             reviewId: review._id,
             replyId: reply._id,
         });
-
     } catch (error) {
-        console.error(
-            "Error processing review:",
-            error
-        );
-
-        res.status(500).json({
-            success: false,
-            message: "Failed to process review",
-        });
+        console.error("Error processing review:", error);
+        res.status(500).json({ success: false, message: "Failed to process review" });
     }
 });
-
 
 // =========================
 // Start Server
 // =========================
 
 const PORT = process.env.PORT || 5000;
-
 if (require.main === module) {
     mongoose
         .connect(process.env.MONGO_URI)
         .then(() => {
             console.log("MongoDB connected");
-
-            app.listen(PORT, () => {
-                console.log(`Server running on port ${PORT}`);
-            });
+            app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
         })
         .catch((err) => {
-            console.error(
-                "MongoDB connection failed:",
-                err.message
-            );
+            console.error("MongoDB connection failed:", err.message);
         });
 }
 

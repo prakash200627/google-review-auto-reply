@@ -41,7 +41,7 @@ export function Layout() {
         <div className="app-layout">
             <Sidebar pendingCount={stats?.pendingReviews} />
             <div className="main-viewport">
-                <Navbar pageTitle={getTitle()} />
+                <Navbar pageTitle={getTitle()} onAIUpdated={fetchGlobalStats} />
                 <main className="content-area">
                     <Outlet context={{ refreshStats: fetchGlobalStats, stats }} />
                 </main>

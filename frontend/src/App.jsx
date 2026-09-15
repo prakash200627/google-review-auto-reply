@@ -50,6 +50,7 @@ export default function App() {
                         <Route path="dashboard" element={<Dashboard />} />
                         <Route path="reviews" element={<Reviews />} />
                         <Route path="pending" element={<PendingReviews />} />
+                        <Route path="settings" element={<Navigate to="/dashboard" replace />} />
                         <Route path="*" element={<Navigate to="/dashboard" replace />} />
                     </Route>
                 </Routes>

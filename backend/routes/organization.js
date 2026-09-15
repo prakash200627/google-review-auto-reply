@@ -82,4 +82,73 @@ router.patch('/mode', authMiddleware, async (req, res) => {
     }
 });
 
+// GET /api/organization/openai-key
+router.get('/openai-key', authMiddleware, async (req, res) => {
+    try {
+        const organization = await Organization.findById(req.organizationId).select('+openaiApiKey');
+        if (!organization) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found.',
+            });
+        }
+
+        const isConfigured = Boolean(organization.openaiApiKey && organization.openaiApiKey.trim() !== '');
+        const isEnabled = organization.openaiEnabled !== false;
+
+        return res.json({
+            success: true,
+            configured: isConfigured,
+            enabled: isEnabled,
+        });
+    } catch (err) {
+        console.error('Get OpenAI key status error:', err.message);
+        return res.status(500).json({ success: false, message: 'Server error retrieving OpenAI key status.' });
+    }
+});
+
+// POST /api/organization/openai-key
+router.post('/openai-key', authMiddleware, async (req, res) => {
+    try {
+        const { apiKey, enabled } = req.body || {};
+        const organization = await Organization.findById(req.organizationId).select('+openaiApiKey');
+        if (!organization) {
+            return res.status(404).json({
+                success: false,
+                message: 'Organization not found.',
+            });
+        }
+
+        if (apiKey !== undefined) {
+            if (typeof apiKey !== 'string' || apiKey.trim() === '') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'API key must be a non-empty string.',
+                });
+            }
+            organization.openaiApiKey = apiKey.trim();
+        }
+
+        if (enabled !== undefined) {
+            organization.openaiEnabled = Boolean(enabled);
+        }
+
+        await organization.save();
+
+        const isConfigured = Boolean(organization.openaiApiKey && organization.openaiApiKey.trim() !== '');
+        const isEnabled = organization.openaiEnabled !== false;
+
+        return res.json({
+            success: true,
+            message: 'OpenAI API key settings updated successfully.',
+            configured: isConfigured,
+            enabled: isEnabled,
+        });
+    } catch (err) {
+        console.error('Update OpenAI key error:', err.message);
+        return res.status(500).json({ success: false, message: 'Server error updating OpenAI API key.' });
+    }
+});
+
 module.exports = router;
+

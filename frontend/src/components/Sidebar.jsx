@@ -7,7 +7,7 @@ export function Sidebar({ pendingCount }) {
     return (
         <aside className="sidebar">
             <div className="sidebar-brand">
-                <div className="brand-logo-icon">⭐</div>
+                <div className="brand-logo-icon">&#x2B50;</div>
                 <div className="brand-text">
                     <span className="brand-title">AutoReply</span>
                     <span className="brand-subtitle">Google Reviews</span>
@@ -23,7 +23,7 @@ export function Sidebar({ pendingCount }) {
                         `nav-item ${isActive ? "nav-item-active" : ""}`
                     }
                 >
-                    <span className="nav-icon">📊</span>
+                    <span className="nav-icon">&#x1F4CA;</span>
                     <span className="nav-label">Dashboard</span>
                 </NavLink>
 
@@ -33,7 +33,7 @@ export function Sidebar({ pendingCount }) {
                         `nav-item ${isActive ? "nav-item-active" : ""}`
                     }
                 >
-                    <span className="nav-icon">📥</span>
+                    <span className="nav-icon">&#x1F4E5;</span>
                     <span className="nav-label">Pending Reviews</span>
                     {typeof pendingCount === "number" && pendingCount > 0 && (
                         <span className="nav-badge-count">{pendingCount}</span>
@@ -46,7 +46,7 @@ export function Sidebar({ pendingCount }) {
                         `nav-item ${isActive ? "nav-item-active" : ""}`
                     }
                 >
-                    <span className="nav-icon">💬</span>
+                    <span className="nav-icon">&#x1F4DD;</span>
                     <span className="nav-label">All Reviews</span>
                 </NavLink>
             </nav>
@@ -63,7 +63,7 @@ export function Sidebar({ pendingCount }) {
                         onClick={logout}
                         title="Sign Out"
                     >
-                        ⎋
+                        &#x1F6AA;
                     </button>
                 </div>
             </div>

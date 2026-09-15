@@ -23,7 +23,7 @@ router.get("/", authMiddleware, async (req, res) => {
                             $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] }
                         },
                         repliedReviews: {
-                            $sum: { $cond: [{ $eq: ["$status", "replied"] }, 1, 0] }
+                            $sum: { $cond: [{ $in: ["$status", ["approved", "replied", "published"]] }, 1, 0] }
                         },
                         rejectedReviews: {
                             $sum: { $cond: [{ $eq: ["$status", "rejected"] }, 1, 0] }
@@ -47,7 +47,7 @@ router.get("/", authMiddleware, async (req, res) => {
                         _id: null,
                         totalReplies: { $sum: 1 },
                         approvedReplies: {
-                            $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] }
+                            $sum: { $cond: [{ $in: ["$status", ["approved", "published"]] }, 1, 0] }
                         },
                         rejectedReplies: {
                             $sum: { $cond: [{ $eq: ["$status", "rejected"] }, 1, 0] }
@@ -89,4 +89,25 @@ router.get("/", authMiddleware, async (req, res) => {
     }
 });
 
+const { generateAnalysis } = require("../services/ai");
+
+// GET /api/stats/analysis - AI analysis for logged-in organization
+router.get("/analysis", authMiddleware, async (req, res) => {
+    try {
+        const result = await generateAnalysis(req.organizationId);
+        res.json({
+            success: true,
+            analysis: result.summary,
+            usedOpenAI: result.usedOpenAI,
+        });
+    } catch (error) {
+        console.error("Get stats analysis error:", error.message);
+        res.status(500).json({
+            success: false,
+            message: "Failed to generate AI analysis",
+        });
+    }
+});
+
 module.exports = router;
+

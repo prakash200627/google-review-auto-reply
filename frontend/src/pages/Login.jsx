@@ -87,7 +87,7 @@ export function Login() {
                                 id="orgName"
                                 type="text"
                                 className="form-input"
-                                placeholder="e.g. Native South Restaurant"
+                                placeholder="e.g. Acme Hospitality"
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
                                 required

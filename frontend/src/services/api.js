@@ -61,11 +61,27 @@ export const organizationService = {
         const res = await api.get("/organization/me");
         return res.data;
     },
+    getOpenAISettings: async () => {
+        const res = await api.get("/organization/openai-key");
+        return res.data;
+    },
+    updateOpenAIKey: async (apiKey) => {
+        const res = await api.post("/organization/openai-key", { apiKey });
+        return res.data;
+    },
+    updateOpenAIEnabled: async (enabled) => {
+        const res = await api.post("/organization/openai-key", { enabled });
+        return res.data;
+    },
 };
 
 export const statsService = {
     getStats: async () => {
         const res = await api.get("/stats");
+        return res.data;
+    },
+    getAnalysis: async () => {
+        const res = await api.get("/stats/analysis");
         return res.data;
     },
 };
