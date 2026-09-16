@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { statsService, reviewsService } from "../services/api";
 import { StatCard } from "../components/StatCard";
@@ -7,26 +7,28 @@ import { Loading } from "../components/Loading";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { useAuth } from "../context/AuthContext";
 
+// In-memory cache for AI analysis to eliminate redundant requests across client navigation
+let cachedAnalysis = null;
+
 export function Dashboard() {
     const navigate = useNavigate();
     const { user } = useAuth();
     const [stats, setStats] = useState(null);
     const [recentPending, setRecentPending] = useState([]);
-    const [analysis, setAnalysis] = useState(null);
+    const [analysis, setAnalysis] = useState(() => cachedAnalysis);
+    const [analysisLoading, setAnalysisLoading] = useState(() => !cachedAnalysis);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState(null);
 
-    const loadDashboardData = async () => {
-        setLoading(true);
-        setError(null);
+    const initialLoadFired = useRef(false);
+
+    // Fast loading of core stats & pending reviews (instant MongoDB queries)
+    const loadCoreStats = async () => {
         try {
-            const [statsData, pendingData, analysisData] = await Promise.all([
+            const [statsData, pendingData] = await Promise.all([
                 statsService.getStats(),
                 reviewsService.getPending(),
-                statsService.getAnalysis().catch((err) => {
-                    console.warn("AI analysis unavailable:", err?.message || err);
-                    return null;
-                }),
             ]);
 
             if (statsData.success) {
@@ -35,29 +37,69 @@ export function Dashboard() {
             if (pendingData.success && pendingData.reviews) {
                 setRecentPending(pendingData.reviews.slice(0, 3));
             }
-            if (analysisData && analysisData.success) {
-                setAnalysis(analysisData);
-            }
         } catch (err) {
-            setError(
-                err.response?.data?.message ||
-                "Failed to load dashboard statistics. Please verify backend connection."
-            );
-        } finally {
-            setLoading(false);
+            console.error("Error loading core dashboard stats:", err);
+            if (!stats) {
+                setError(
+                    err.response?.data?.message ||
+                    "Failed to load dashboard statistics. Please verify backend connection."
+                );
+            }
         }
     };
 
+    // Dedicated, non-blocking fetch for AI analysis (strictly on initial load or explicit user refresh)
+    const loadAnalysisData = async () => {
+        setAnalysisLoading(true);
+        try {
+            const analysisData = await statsService.getAnalysis();
+            if (analysisData && analysisData.success) {
+                cachedAnalysis = analysisData;
+                setAnalysis((prev) => {
+                    // Never overwrite a successful OpenAI response with fallback data
+                    if (prev?.usedOpenAI && !analysisData.usedOpenAI) {
+                        return prev;
+                    }
+                    return analysisData;
+                });
+            }
+        } catch (err) {
+            console.warn("AI analysis unavailable:", err?.message || err);
+        } finally {
+            setAnalysisLoading(false);
+        }
+    };
+
+    // Refresh all data in-place ONLY when the user explicitly clicks "Refresh Data"
+    const handleRefresh = async () => {
+        setRefreshing(true);
+        await Promise.allSettled([loadCoreStats(), loadAnalysisData()]);
+        setRefreshing(false);
+    };
+
     useEffect(() => {
-        loadDashboardData();
+        if (initialLoadFired.current) return;
+        initialLoadFired.current = true;
+
+        const initDashboard = async () => {
+            setError(null);
+            // Fetch AI analysis only if not already loaded; core stats always load fast
+            if (!cachedAnalysis) {
+                loadAnalysisData();
+            }
+            await loadCoreStats();
+            setLoading(false);
+        };
+
+        initDashboard();
     }, []);
 
-    if (loading) {
+    if (loading && !stats) {
         return <Loading message="Loading dashboard statistics..." />;
     }
 
     if (error && !stats) {
-        return <ErrorMessage message={error} onRetry={loadDashboardData} />;
+        return <ErrorMessage message={error} onRetry={handleRefresh} />;
     }
 
     return (
@@ -66,7 +108,7 @@ export function Dashboard() {
             <div className="page-header-row">
                 <div>
                     <h2 className="section-title">
-                        Welcome back, {user?.name || "Organization"}! &#x1F44B;
+                        Welcome back, {user?.name || "Organization"}! 👋
                     </h2>
                     <p className="section-subtitle">
                         Here is an overview of your Google review metrics, response drafts, and pending approvals.
@@ -75,24 +117,87 @@ export function Dashboard() {
                 <button
                     type="button"
                     className="btn btn-secondary btn-refresh"
-                    onClick={loadDashboardData}
+                    onClick={handleRefresh}
+                    disabled={refreshing}
                 >
-                    &#x1F504; Refresh Data
+                    {refreshing ? "🔄 Refreshing..." : "🔄 Refresh Data"}
                 </button>
+            </div>
+
+            {/* AI Review Summary & Analysis - At the TOP */}
+            <div className="stats-section">
+                <h3 className="subheading">AI Review Summary &amp; Analysis</h3>
+                <div className="stat-card" style={{ padding: "1.25rem" }}>
+                    <div className="stat-card-header">
+                        <span className="stat-card-title">🧠 Executive Intelligence Summary</span>
+                        {analysisLoading && !analysis ? (
+                            <span className="badge badge-status-pending">
+                                <span className="badge-dot" /> Generating AI Insights...
+                            </span>
+                        ) : (
+                            <span
+                                className={
+                                    analysis?.usedOpenAI
+                                        ? "badge badge-status-approved"
+                                        : "badge badge-status-neutral"
+                                }
+                            >
+                                {analysis?.usedOpenAI
+                                    ? "✨ Powered by OpenAI"
+                                    : "🤖 Automated Summary"}
+                            </span>
+                        )}
+                    </div>
+                    <div
+                        style={{
+                            marginTop: "0.75rem",
+                            fontSize: "0.92rem",
+                            lineHeight: "1.6",
+                            color: "var(--text-primary)",
+                        }}
+                    >
+                        <p style={{ margin: 0 }}>
+                            {analysisLoading && !analysis
+                                ? "Analyzing recent Google reviews and customer sentiment with AI..."
+                                : analysis?.analysis ||
+                                  analysis?.summary ||
+                                  (typeof analysis === "string"
+                                      ? analysis
+                                      : "No review summary available.")}
+                        </p>
+                        <div
+                            style={{
+                                marginTop: "0.75rem",
+                                fontSize: "0.8rem",
+                                color: "var(--text-muted)",
+                            }}
+                        >
+                            Engine:{" "}
+                            {analysisLoading && !analysis
+                                ? "OpenAI gpt-4o-mini (Processing...)"
+                                : analysis?.usedOpenAI
+                                ? "OpenAI gpt-4o-mini"
+                                : "System Sentiment Analyzer"}
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* Attention Alert if pending reviews exist */}
             {stats && stats.pendingReviews > 0 && (
                 <div className="alert-banner-inbox">
                     <div className="alert-banner-content">
-                        <span className="alert-banner-icon">&#x26A1;</span>
+                        <span className="alert-banner-icon">⚡</span>
                         <div>
-                            <strong>{stats.pendingReviews} review{stats.pendingReviews > 1 ? "s" : ""} waiting for your response!</strong>
+                            <strong>
+                                {stats.pendingReviews} review
+                                {stats.pendingReviews > 1 ? "s" : ""} waiting for your response!
+                            </strong>
                             <p>AI draft replies are ready for review, edit, or approval.</p>
                         </div>
                     </div>
                     <Link to="/pending" className="btn btn-primary btn-sm">
-                        Go to Inbox &#x2192;
+                        Go to Inbox →
                     </Link>
                 </div>
             )}
@@ -105,7 +210,7 @@ export function Dashboard() {
                         title="Total Reviews"
                         value={stats?.totalReviews}
                         subtitle="All Google reviews received"
-                        icon="&#x2B50;"
+                        icon="⭐"
                         variant="primary"
                         onClick={() => navigate("/reviews")}
                     />
@@ -113,7 +218,7 @@ export function Dashboard() {
                         title="Pending Reviews"
                         value={stats?.pendingReviews}
                         subtitle="Awaiting approval / action"
-                        icon="&#x23F3;"
+                        icon="⏳"
                         variant="warning"
                         onClick={() => navigate("/pending")}
                     />
@@ -121,7 +226,7 @@ export function Dashboard() {
                         title="Replied Reviews"
                         value={stats?.repliedReviews}
                         subtitle="Replies approved / handled"
-                        icon="&#x2705;"
+                        icon="✅"
                         variant="success"
                         onClick={() => navigate("/reviews")}
                     />
@@ -129,7 +234,7 @@ export function Dashboard() {
                         title="Rejected Reviews"
                         value={stats?.rejectedReviews}
                         subtitle="Drafts dismissed by user"
-                        icon="&#x1F6AB;"
+                        icon="🚫"
                         variant="danger"
                         onClick={() => navigate("/reviews")}
                     />
@@ -144,21 +249,21 @@ export function Dashboard() {
                         title="Positive Reviews"
                         value={stats?.positiveReviews}
                         subtitle="4 &amp; 5-star customer feedback"
-                        icon="&#x1F7E2;"
+                        icon="🟢"
                         variant="success"
                     />
                     <StatCard
                         title="Neutral Reviews"
                         value={stats?.neutralReviews}
                         subtitle="3-star balanced feedback"
-                        icon="&#x26AA;"
+                        icon="⚪"
                         variant="default"
                     />
                     <StatCard
                         title="Negative Reviews"
                         value={stats?.negativeReviews}
                         subtitle="1 &amp; 2-star feedback"
-                        icon="&#x1F534;"
+                        icon="🔴"
                         variant="danger"
                     />
                 </div>
@@ -172,55 +277,32 @@ export function Dashboard() {
                         title="Total Replies Drafted"
                         value={stats?.totalReplies}
                         subtitle="Generated by AI service"
-                        icon="&#x1F916;"
+                        icon="🤖"
                         variant="primary"
                     />
                     <StatCard
                         title="Approved Replies"
                         value={stats?.approvedReplies}
                         subtitle="Validated and confirmed"
-                        icon="&#x1F44D;"
+                        icon="👍"
                         variant="success"
                     />
                     <StatCard
                         title="Rejected Replies"
                         value={stats?.rejectedReplies}
                         subtitle="Declined by operator"
-                        icon="&#x2715;"
+                        icon="✕"
                         variant="danger"
                     />
                     <StatCard
                         title="Published to Google"
                         value={stats?.publishedReplies}
                         subtitle="Live on Google Maps"
-                        icon="&#x1F680;"
+                        icon="🚀"
                         variant="info"
                     />
                 </div>
             </div>
-
-            {/* AI Review Summary & Analysis */}
-            {analysis && (
-                <div className="stats-section">
-                    <h3 className="subheading">AI Review Summary &amp; Analysis</h3>
-                    <div className="stat-card" style={{ padding: '1.25rem' }}>
-                        <div className="stat-card-header">
-                            <span className="stat-card-title">&#x1F9E0; Executive Intelligence Summary</span>
-                            <span className={analysis?.usedOpenAI ? "badge badge-status-approved" : "badge badge-status-neutral"}>
-                                {analysis?.usedOpenAI ? "✨ Powered by OpenAI" : "🤖 Automated Summary"}
-                            </span>
-                        </div>
-                        <div style={{ marginTop: '0.75rem', fontSize: '0.92rem', lineHeight: '1.6', color: 'var(--text-primary)' }}>
-                            <p style={{ margin: 0 }}>
-                                {analysis?.analysis || analysis?.summary || (typeof analysis === 'string' ? analysis : "No review summary available.")}
-                            </p>
-                            <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                                Engine: {analysis?.usedOpenAI ? "OpenAI gpt-5-mini" : "System Sentiment Analyzer"}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Quick Preview of Pending Reviews */}
             {recentPending.length > 0 && (
@@ -231,7 +313,7 @@ export function Dashboard() {
                             <p className="text-muted">Top reviews currently waiting for decision</p>
                         </div>
                         <Link to="/pending" className="link-see-all">
-                            View All ({stats?.pendingReviews || recentPending.length}) &#x2192;
+                            View All ({stats?.pendingReviews || recentPending.length}) →
                         </Link>
                     </div>
 

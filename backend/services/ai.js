@@ -78,7 +78,7 @@ async function generateReply(review, orgId = null) {
             const prompt = `You are a professional customer relation manager. Generate a polite, empathetic Google review reply for a ${numericRating}-star rating with customer comment: "${comment}". Keep it under 150 words.`;
 
             const response = await openai.chat.completions.create({
-                model: "gpt-5-mini",
+                model: "gpt-4o-mini",
                 messages: [{ role: "user", content: prompt }],
                 max_completion_tokens: 150,
             });
@@ -197,11 +197,10 @@ async function generateAnalysis(orgId) {
             const prompt = `Analyze ${totalCount === 1 ? "this 1 customer review" : `these ${totalCount} customer reviews`} and provide a concise 2-3 sentence executive summary of overall sentiment, key customer praise, and main complaints:\n\n${commentsText}`;
 
             const response = await openai.chat.completions.create({
-                model: "gpt-5-mini",
+                model: "gpt-4o-mini",
                 messages: [{ role: "user", content: prompt }],
-                max_completion_tokens: 150,
+                max_completion_tokens: 500,
             });
-
             if (response && response.choices && response.choices[0]?.message?.content) {
                 return {
                     summary: response.choices[0].message.content.trim(),
