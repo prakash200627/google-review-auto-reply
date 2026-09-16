@@ -170,7 +170,7 @@ app.post("/api/webhook/review", async (req, res) => {
         // -------------------------
         // 6. Generate AI result
         // -------------------------
-        const aiResult = await generateReply({ rating: numericRating, comment }, location.orgId);
+        const aiResult = await generateReply({ rating: numericRating, comment, reviewerName }, location.orgId);
 
         // -------------------------
         // 7. Save Review
