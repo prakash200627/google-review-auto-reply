@@ -4,6 +4,9 @@ const Review = require("../models/Review");
 async function generateReply(review, orgId = null) {
     const rawRating = review ? review.rating : null;
     const comment = review ? (review.comment || review.text || "") : "";
+    // Extract reviewer first name if available
+    const reviewerName = review && review.reviewerName ? review.reviewerName : "";
+    const firstName = reviewerName.split(' ')[0] || "";
 
     // Normalize rating to numeric value 1-5
     const ratingMap = {
@@ -75,7 +78,7 @@ async function generateReply(review, orgId = null) {
         try {
             const { OpenAI } = require("openai");
             const openai = new OpenAI({ apiKey: apiKeyToUse });
-            const prompt = `You are a professional customer relation manager. Write a concise, friendly, and professional Google review reply that directly addresses the customer's comment. Use only information present in the comment. Do not include any greetings, signatures, placeholders, or mention of stars. Match the tone to the ${numericRating}-star rating (positive for 4-5, neutral for 3, apologetic for 1-2). Keep it under 150 words.`;
+            const prompt = `You are a professional customer relation manager. Write a concise, friendly, and professional Google review reply that directly addresses the customer's comment. ${firstName ? `Address the reviewer by their first name ${firstName}. ` : ''}Use only information present in the comment. Do not include any greetings, signatures, placeholders, or mention of stars. Match the tone to the ${numericRating}-star rating (positive for 4-5, neutral for 3, apologetic for 1-2). Keep it under 150 words.`;
 
             const response = await openai.chat.completions.create({
                 model: "gpt-4o-mini",

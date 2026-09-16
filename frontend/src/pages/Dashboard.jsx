@@ -53,6 +53,7 @@ export function Dashboard() {
         setAnalysisLoading(true);
         try {
             const analysisData = await statsService.getAnalysis();
+            console.log("DASHBOARD ANALYSIS RESPONSE:", analysisData);
             if (analysisData && analysisData.success) {
                 cachedAnalysis = analysisData;
                 setAnalysis((prev) => {
@@ -64,7 +65,7 @@ export function Dashboard() {
                 });
             }
         } catch (err) {
-            console.warn("AI analysis unavailable:", err?.message || err);
+            console.error("DASHBOARD ANALYSIS ERROR:", err);
         } finally {
             setAnalysisLoading(false);
         }

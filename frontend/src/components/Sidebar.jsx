@@ -26,6 +26,24 @@ export function Sidebar({ pendingCount }) {
                     <span className="nav-icon">&#x1F4CA;</span>
                     <span className="nav-label">Dashboard</span>
                 </NavLink>
+                <NavLink
+                    to="/summary"
+                    className={({ isActive }) =>
+                        `nav-item ${isActive ? "nav-item-active" : ""}`
+                    }
+                >
+                    <span className="nav-icon">📋</span>
+                    <span className="nav-label">Summary</span>
+                </NavLink>
+                <NavLink
+                    to="/analysis"
+                    className={({ isActive }) =>
+                        `nav-item ${isActive ? "nav-item-active" : ""}`
+                    }
+                >
+                    <span className="nav-icon">🔍</span>
+                    <span className="nav-label">Analysis</span>
+                </NavLink>
 
                 <NavLink
                     to="/pending"

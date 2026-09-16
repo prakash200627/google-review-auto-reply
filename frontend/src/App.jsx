@@ -5,6 +5,8 @@ import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { Reviews } from "./pages/Reviews";
 import { PendingReviews } from "./pages/PendingReviews";
+import { Summary } from "./pages/Summary";
+import Analysis from "./pages/Analysis";
 
 function ProtectedRoute({ children }) {
     const { isAuthenticated } = useAuth();
@@ -48,6 +50,8 @@ export default function App() {
                     >
                         <Route index element={<Navigate to="/dashboard" replace />} />
                         <Route path="dashboard" element={<Dashboard />} />
+                        <Route path="summary" element={<Summary />} />
+                        <Route path="analysis" element={<Analysis />} />
                         <Route path="reviews" element={<Reviews />} />
                         <Route path="pending" element={<PendingReviews />} />
                         <Route path="settings" element={<Navigate to="/dashboard" replace />} />
