@@ -75,7 +75,7 @@ async function generateReply(review, orgId = null) {
         try {
             const { OpenAI } = require("openai");
             const openai = new OpenAI({ apiKey: apiKeyToUse });
-            const prompt = `You are a professional customer relation manager. Generate a polite, empathetic Google review reply for a ${numericRating}-star rating with customer comment: "${comment}". Keep it under 150 words.`;
+            const prompt = `You are a professional customer relation manager. Write a concise, friendly, and professional Google review reply that directly addresses the customer's comment. Use only information present in the comment. Do not include any greetings, signatures, placeholders, or mention of stars. Match the tone to the ${numericRating}-star rating (positive for 4-5, neutral for 3, apologetic for 1-2). Keep it under 150 words.`;
 
             const response = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
