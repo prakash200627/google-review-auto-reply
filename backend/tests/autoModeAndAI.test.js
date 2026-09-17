@@ -37,6 +37,17 @@ describe("AI Reply Service & Safety Tests", () => {
         expect(result.urgency).toBe("high");
     });
 
+    test("Does NOT flag standard 1-star negative review for human review without safety keywords", async () => {
+        const result = await generateReply({
+            rating: 1,
+            comment: "The food was cold and service was very slow.",
+        });
+        expect(result.sentiment).toBe("negative");
+        expect(result.needsHumanReview).toBe(false);
+        expect(result.urgency).toBe("medium");
+        expect(result.draftReply).toBeDefined();
+    });
+
     test("Does not crash if OPENAI_API_KEY is an invalid key string", async () => {
         process.env.OPENAI_API_KEY = "sk-invalid-key-test";
         const result = await generateReply({ rating: 4, comment: "Nice ambience" });

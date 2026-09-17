@@ -44,7 +44,6 @@ async function generateReply(review, orgId = null) {
     } else {
         sentiment = "negative";
         urgency = "medium";
-        needsHumanReview = true;
     }
 
     // Determine API Key & Enabled status

@@ -84,6 +84,71 @@ describe("Webhook & Organization AI Key Integration Tests", () => {
         );
     });
 
+    test("MANUAL 1-star: Manual Mode keeps 1-star negative reviews pending without auto-publishing", async () => {
+        const mockOrgId = new mongoose.Types.ObjectId();
+        const mockLocationId = new mongoose.Types.ObjectId();
+
+        const mockLocation = {
+            _id: mockLocationId,
+            orgId: mockOrgId,
+            name: "Test Location",
+            googleLocationId: "loc_man_1",
+        };
+
+        const mockOrg = {
+            _id: mockOrgId,
+            name: "Test Org",
+            mode: "manual",
+        };
+
+        jest.spyOn(Location, "findOne").mockResolvedValue(mockLocation);
+        jest.spyOn(Review, "findOne").mockResolvedValue(null);
+        jest.spyOn(Organization, "findById").mockImplementation(() => mockOrgQuery(mockOrg));
+
+        const mockReviewDoc = {
+            _id: new mongoose.Types.ObjectId(),
+            orgId: mockOrgId,
+            locationId: mockLocationId,
+            googleReviewId: "rev_man_1",
+            rating: 1,
+            text: "Terrible service, food was cold.",
+            status: "pending",
+            save: jest.fn().mockResolvedValue(true),
+        };
+
+        const mockReplyDoc = {
+            _id: new mongoose.Types.ObjectId(),
+            reviewId: mockReviewDoc._id,
+            orgId: mockOrgId,
+            draftReply: "We are sorry to hear that.",
+            status: "pending",
+            needsHumanReview: false,
+            save: jest.fn().mockResolvedValue(true),
+        };
+
+        jest.spyOn(Review, "create").mockResolvedValue(mockReviewDoc);
+        jest.spyOn(Reply, "create").mockResolvedValue(mockReplyDoc);
+
+        process.env.MAKE_APPROVED_REPLY_WEBHOOK_URL = "https://example.com/make-webhook";
+
+        const res = await request(app)
+            .post("/api/webhook/review")
+            .send({
+                reviewId: "rev_man_1",
+                reviewerName: "John Doe",
+                rating: 1,
+                comment: "Terrible service, food was cold.",
+                googleResourceName: "accounts/acc_1/locations/loc_man_1/reviews/rev_man_1",
+            });
+
+        expect(res.status).toBe(201);
+        expect(res.body.success).toBe(true);
+        expect(res.body.autoProcessed).toBe(false);
+        expect(axios.post).not.toHaveBeenCalled();
+        expect(mockReviewDoc.status).toBe("pending");
+        expect(mockReplyDoc.status).toBe("pending");
+    });
+
     test("2. Unregistered googleLocationId returns 404", async () => {
         jest.spyOn(Location, "findOne").mockResolvedValue(null);
 
@@ -100,7 +165,7 @@ describe("Webhook & Organization AI Key Integration Tests", () => {
         expect(res.body.message).toBe("Google location is not registered");
     });
 
-    test("3. Auto Mode auto-publishes normal reviews to Make.com webhook", async () => {
+    test("3. AUTO 5-star: Auto Mode auto-publishes 5-star reviews to Make.com webhook", async () => {
         const mockOrgId = new mongoose.Types.ObjectId();
         const mockLocationId = new mongoose.Types.ObjectId();
 
@@ -165,6 +230,79 @@ describe("Webhook & Organization AI Key Integration Tests", () => {
             expect.objectContaining({
                 reviewId: "rev_auto_1",
                 googleResourceName: "accounts/acc_1/locations/loc_auto_1/reviews/rev_auto_1",
+                orgId: mockOrgId,
+            })
+        );
+    });
+
+    test("3b. AUTO 1-star: Auto Mode auto-publishes standard 1-star negative reviews to Make.com webhook", async () => {
+        const mockOrgId = new mongoose.Types.ObjectId();
+        const mockLocationId = new mongoose.Types.ObjectId();
+
+        const mockLocation = {
+            _id: mockLocationId,
+            orgId: mockOrgId,
+            googleLocationId: "loc_auto_neg",
+        };
+
+        const mockOrg = {
+            _id: mockOrgId,
+            mode: "auto",
+        };
+
+        const mockReviewDoc = {
+            _id: new mongoose.Types.ObjectId(),
+            orgId: mockOrgId,
+            locationId: mockLocationId,
+            googleReviewId: "rev_auto_neg",
+            reviewerName: "White Devil",
+            rating: 1,
+            text: "Terrible service and food was cold.",
+            googleResourceName: "accounts/acc_1/locations/loc_auto_neg/reviews/rev_auto_neg",
+            status: "pending",
+            save: jest.fn().mockResolvedValue(true),
+        };
+
+        const mockReplyDoc = {
+            _id: new mongoose.Types.ObjectId(),
+            reviewId: mockReviewDoc._id,
+            orgId: mockOrgId,
+            draftReply: "We are truly sorry about your experience.",
+            finalReply: "",
+            status: "pending",
+            save: jest.fn().mockResolvedValue(true),
+        };
+
+        jest.spyOn(Location, "findOne").mockResolvedValue(mockLocation);
+        jest.spyOn(Review, "findOne").mockResolvedValue(null);
+        jest.spyOn(Organization, "findById").mockImplementation(() => mockOrgQuery(mockOrg));
+        jest.spyOn(Review, "create").mockResolvedValue(mockReviewDoc);
+        jest.spyOn(Reply, "create").mockResolvedValue(mockReplyDoc);
+
+        process.env.MAKE_APPROVED_REPLY_WEBHOOK_URL = "https://example.com/make-webhook";
+        axios.post.mockResolvedValue({ status: 200 });
+
+        const res = await request(app)
+            .post("/api/webhook/review")
+            .send({
+                reviewId: "rev_auto_neg",
+                reviewerName: "White Devil",
+                rating: 1,
+                comment: "Terrible service and food was cold.",
+                googleResourceName: "accounts/acc_1/locations/loc_auto_neg/reviews/rev_auto_neg",
+            });
+
+        expect(res.status).toBe(201);
+        expect(res.body.success).toBe(true);
+        expect(res.body.autoProcessed).toBe(true);
+        expect(mockReviewDoc.status).toBe("approved");
+        expect(mockReplyDoc.status).toBe("approved");
+        expect(axios.post).toHaveBeenCalledWith(
+            "https://example.com/make-webhook",
+            expect.objectContaining({
+                reviewId: "rev_auto_neg",
+                rating: 1,
+                googleResourceName: "accounts/acc_1/locations/loc_auto_neg/reviews/rev_auto_neg",
                 orgId: mockOrgId,
             })
         );
