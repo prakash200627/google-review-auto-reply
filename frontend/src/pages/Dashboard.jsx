@@ -5,7 +5,7 @@ import { StatCard } from "../components/StatCard";
 import { ReviewCard } from "../components/ReviewCard";
 import { Loading } from "../components/Loading";
 import { ErrorMessage } from "../components/ErrorMessage";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 
 // In-memory cache for AI analysis to eliminate redundant requests across client navigation
 let cachedAnalysis = null;
@@ -53,7 +53,6 @@ export function Dashboard() {
         setAnalysisLoading(true);
         try {
             const analysisData = await statsService.getAnalysis();
-            console.log("DASHBOARD ANALYSIS RESPONSE:", analysisData);
             if (analysisData && analysisData.success) {
                 cachedAnalysis = analysisData;
                 setAnalysis((prev) => {

@@ -1,4 +1,17 @@
 const generateReply = require("../services/ai");
+const { buildReplyMessages, extractFirstName } = require("../services/ai");
+
+jest.mock("openai", () => ({
+    OpenAI: jest.fn().mockImplementation(() => ({
+        chat: {
+            completions: {
+                create: jest.fn().mockRejectedValue(
+                    Object.assign(new Error("Incorrect API key provided"), { status: 401 })
+                ),
+            },
+        },
+    })),
+}));
 
 describe("AI Reply Service & Safety Tests", () => {
     const origEnv = process.env;
@@ -70,18 +83,18 @@ describe("AI Reply Service & Safety Tests", () => {
         expect(result.usedOpenAI).toBe(false); // no key configured in this test
     });
 
-    test("OpenAI prompt contains firstName 'White' when reviewerName is 'White Devil'", () => {
-        // Pure unit test: verifies the prompt template used in ai.js contains the first name.
-        // Mirrors exactly the prompt construction in services/ai.js so no real API call is made.
-        const reviewerName = "White Devil";
-        const firstName = reviewerName.split(" ")[0]; // "White"
-        const numericRating = 5;
+    test("OpenAI prompt contains firstName 'White' and the review text when reviewerName is 'White Devil'", () => {
+        const messages = buildReplyMessages({
+            rating: 5,
+            comment: "Amazing biryani and friendly staff.",
+            firstName: extractFirstName("White Devil"),
+        });
+        const allContent = messages.map((m) => m.content).join("\n");
 
-        const prompt = `You are a professional customer relation manager. Write a concise, friendly, and professional Google review reply that directly addresses the customer's comment. ${firstName ? `Address the reviewer by their first name ${firstName}. ` : ""}Use only information present in the comment. Do not include any greetings, signatures, placeholders, or mention of stars. Match the tone to the ${numericRating}-star rating (positive for 4-5, neutral for 3, apologetic for 1-2). Keep it under 150 words.`;
-
-        expect(firstName).toBe("White");
-        expect(prompt).toContain("White");
-        expect(prompt).toContain("Address the reviewer by their first name White");
+        expect(allContent).toContain("first name, White");
+        expect(allContent).toContain("Reviewer first name: White");
+        expect(allContent).toContain("Amazing biryani and friendly staff.");
+        expect(allContent).toContain("Star rating: 5/5");
     });
 
     test("generateReply works without reviewerName (no name in prompt)", async () => {
@@ -103,8 +116,15 @@ describe("AI Reply Service & Safety Tests", () => {
             ["",                         ""],
         ];
         for (const [fullName, expected] of cases) {
-            const firstName = fullName.split(" ")[0] || "";
-            expect(firstName).toBe(expected);
+            expect(extractFirstName(fullName)).toBe(expected);
         }
+    });
+
+    test("Generic or invalid reviewer names are not used for personalization", () => {
+        expect(extractFirstName("A Google User")).toBe("");
+        expect(extractFirstName("Anonymous")).toBe("");
+        expect(extractFirstName("12345")).toBe("");
+        expect(extractFirstName(undefined)).toBe("");
+        expect(extractFirstName("PRIYA SHARMA")).toBe("Priya");
     });
 });

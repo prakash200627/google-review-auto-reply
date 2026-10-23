@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 
 export function Sidebar({ pendingCount }) {
     const { user } = useAuth();
@@ -66,6 +66,16 @@ export function Sidebar({ pendingCount }) {
                 >
                     <span className="nav-icon">&#x1F4DD;</span>
                     <span className="nav-label">All Reviews</span>
+                </NavLink>
+
+                <NavLink
+                    to="/settings/google"
+                    className={({ isActive }) =>
+                        `nav-item ${isActive ? "nav-item-active" : ""}`
+                    }
+                >
+                    <span className="nav-icon">&#x1F517;</span>
+                    <span className="nav-label">Google Connection</span>
                 </NavLink>
             </nav>
 

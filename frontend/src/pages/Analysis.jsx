@@ -1,5 +1,5 @@
 // Analysis Page – AI intelligence view using exact Dashboard visual language
-import React, { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { statsService } from "../services/api";
 import { Loading } from "../components/Loading";
 import { ErrorMessage } from "../components/ErrorMessage";

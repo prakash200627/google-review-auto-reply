@@ -8,12 +8,22 @@ const router = express.Router();
 // Add a location
 router.post("/", authMiddleware, async (req, res) => {
     try {
-        const { name, googleLocationId } = req.body;
+        const { name, googleLocationId } = req.body || {};
 
         if (!name || !googleLocationId) {
             return res.status(400).json({
                 success: false,
                 message: "Name and Google Location ID are required",
+            });
+        }
+
+        // Ingestion extracts the ID from ".../locations/<id>/reviews/...", so an ID containing
+        // "/" or whitespace could never match a review.
+        if (typeof name !== "string" || typeof googleLocationId !== "string" ||
+            name.trim().length > 200 || googleLocationId.length > 200 || /[\s/]/.test(googleLocationId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Name and Google Location ID must be text, and the ID cannot contain spaces or slashes",
             });
         }
 

@@ -1,282 +1,140 @@
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
-const dns = require("dns");
 
-dns.setServers(["8.8.8.8"]);
+// Tests configure their own environment and must never read real credentials.
+if (process.env.NODE_ENV !== "test") {
+    require("dotenv").config();
+}
 
-require("dotenv").config();
-
-const Review = require("./models/Review");
-const Reply = require("./models/Reply");
-const Location = require("./models/Location");
-const Organization = require("./models/Organization");
-const axios = require("axios");
+const { isProductionRuntime, configureDnsServers } = require("./config/runtime");
+configureDnsServers();
 
 const organizationRoutes = require("./routes/organization");
-const generateReply = require("./services/ai");
-
 const authRoutes = require("./routes/auth");
 const locationRoutes = require("./routes/location");
 const reviewsRoutes = require("./routes/reviews");
 const replyRoutes = require("./routes/reply");
 const statsRoutes = require("./routes/stats");
-// Import temporary test AI route
-
+const googleRoutes = require("./routes/google");
+const { isOAuthConfigured } = require("./services/googleOAuth");
+const { isEncryptionConfigured } = require("./services/tokenEncryption");
+const { startReviewSyncScheduler } = require("./services/reviewSync");
 
 const app = express();
 
-// CORS configuration for Vercel production and local development
+// Render terminates TLS at a proxy; trust it so req.ip is the real client (used for rate limiting).
+app.set("trust proxy", 1);
+
 const allowedOrigins = [
     "https://google-review-auto-reply.vercel.app",
     "http://localhost:5173",
     "http://localhost:3000",
     "http://127.0.0.1:5173",
+    ...(process.env.CORS_ORIGINS || "").split(",").map((o) => o.trim()).filter(Boolean),
 ];
 
 app.use(cors({
     origin: function (origin, callback) {
-        // allow requests with no origin (like mobile apps, curl, or server-to-server webhooks)
         if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== "production") {
+        if (allowedOrigins.includes(origin) || process.env.NODE_ENV !== "production") {
             return callback(null, true);
         }
-        return callback(null, true); // Fallback allow to avoid CORS block
+        return callback(null, false);
     },
     credentials: true,
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: "100kb" }));
 app.use("/api/organization", organizationRoutes);
-
-// =========================
-// Routes
-// =========================
-
 app.use("/api/auth", authRoutes);
 app.use("/api/locations", locationRoutes);
 app.use("/api/reviews", reviewsRoutes);
 app.use("/api/reply", replyRoutes);
 app.use("/api/stats", statsRoutes);
-// Mount temporary test route under /api
-
-
-// =========================
-// Health Check
-// =========================
+app.use("/api/google", googleRoutes);
 
 app.get("/", (req, res) => {
     res.json({
         message: "Google Review Auto-Reply Backend is running",
+        googleOAuthConfigured: isOAuthConfigured(),
     });
 });
 
-// =========================
-// Google Review Webhook
-// =========================
-
-app.post("/api/webhook/review", async (req, res) => {
-    try {
-        console.log("\nNew review received:");
-        console.log(req.body);
-
-        const {
-            reviewId,
-            reviewerName,
-            rating,
-            comment,
-            googleResourceName,
-        } = req.body;
-
-        // -------------------------
-        // 1. Validate input
-        // -------------------------
-
-        if (!reviewId || !rating || !googleResourceName) {
-            return res.status(400).json({
-                success: false,
-                message: "reviewId, rating and googleResourceName are required",
-            });
-        }
-
-        // -------------------------
-        // 2. Extract Google Location ID
-        // -------------------------
-
-        const locationMatch = googleResourceName.match(/\/locations\/([^/]+)\/reviews\//);
-
-        if (!locationMatch) {
-            console.error("Could not extract Google Location ID from:", googleResourceName);
-            return res.status(400).json({
-                success: false,
-                message: "Invalid Google resource name",
-            });
-        }
-
-        const googleLocationId = locationMatch[1];
-        console.log("Google Location ID:", googleLocationId);
-
-        // -------------------------
-        // 3. Find our Location
-        // -------------------------
-
-        const location = await Location.findOne({ googleLocationId });
-        if (!location) {
-            console.error("Location not found in database:", googleLocationId);
-            return res.status(404).json({
-                success: false,
-                message: "Google location is not registered",
-                googleLocationId,
-            });
-        }
-
-        console.log("Location found:", location._id);
-        console.log("Organization:", location.orgId);
-
-        // -------------------------
-        // 4. Check duplicate review
-        // -------------------------
-
-        const existingReview = await Review.findOne({ googleReviewId: reviewId });
-        if (existingReview) {
-            if (reviewerName && !existingReview.reviewerName) {
-                existingReview.reviewerName = reviewerName;
-            }
-            if (googleResourceName && !existingReview.googleResourceName) {
-                existingReview.googleResourceName = googleResourceName;
-            }
-            await existingReview.save();
-            const existingReply = await Reply.findOne({ reviewId: existingReview._id });
-            return res.status(200).json({
-                success: true,
-                message: "Review already exists",
-                reviewId: existingReview._id,
-                replyId: existingReply ? existingReply._id : null,
-            });
-        }
-
-        // -------------------------
-        // 5. Convert Google rating
-        // -------------------------
-
-        const ratingMap = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
-        const numericRating =
-            ratingMap[rating] ||
-            (typeof rating === "number" && rating >= 1 && rating <= 5 ? rating : null);
-        if (!numericRating) {
-            return res.status(400).json({ success: false, message: "Invalid Google star rating" });
-        }
-
-        // -------------------------
-        // 6. Generate AI result
-        // -------------------------
-        const aiResult = await generateReply({ rating: numericRating, comment, reviewerName }, location.orgId);
-
-        // -------------------------
-        // 7. Save Review
-        // -------------------------
-        const review = await Review.create({
-            orgId: location.orgId,
-            locationId: location._id,
-            googleReviewId: reviewId,
-            reviewerName: reviewerName || "",
-            rating: numericRating,
-            text: comment || "",
-            sentiment: aiResult.sentiment,
-            status: "pending",
-            googleResourceName,
-        });
-
-        // -------------------------
-        // 8. Save Reply
-        // -------------------------
-        const reply = await Reply.create({
-            reviewId: review._id,
-            orgId: location.orgId,
-            draftReply: aiResult.draftReply,
-            needsHumanReview: aiResult.needsHumanReview,
-            urgency: aiResult.urgency,
-            status: "pending",
-        });
-
-        // -------------------------
-        // 9. Success response (auto/manual handling)
-        // -------------------------
-        const organization = await Organization.findById(location.orgId);
-        const isAuto = organization && organization.mode === "auto";
-
-        if (isAuto && !aiResult.needsHumanReview) {
-            const finalReply = aiResult.draftReply;
-            reply.finalReply = finalReply;
-            reply.status = "approved";
-            await reply.save();
-            review.status = "approved";
-            await review.save();
-            const webhookUrl = process.env.MAKE_APPROVED_REPLY_WEBHOOK_URL;
-            if (webhookUrl) {
-                try {
-                    await axios.post(webhookUrl, {
-                        reviewId: review.googleReviewId || review._id,
-                        reviewerName: review.reviewerName,
-                        rating: review.rating,
-                        comment: review.text,
-                        googleResourceName: review.googleResourceName,
-                        finalReply,
-                        orgId: review.orgId,
-                    });
-                } catch (err) {
-                    console.error("Failed to call Make.com webhook (auto mode):", err.message);
-                    reply.status = "pending";
-                    await reply.save();
-                    review.status = "pending";
-                    await review.save();
-                    return res.status(502).json({
-                        success: false,
-                        message: "Auto reply generated but failed to notify Make.com webhook",
-                        reviewId: review._id,
-                        replyId: reply._id,
-                    });
-                }
-            } else {
-                console.error("MAKE_APPROVED_REPLY_WEBHOOK_URL not configured");
-            }
-            return res.status(201).json({
-                success: true,
-                autoProcessed: true,
-                message: "Review saved and auto-reply sent",
-                reviewId: review._id,
-                replyId: reply._id,
-            });
-        }
-
-        // Manual or high‑risk path
-        return res.status(201).json({
-            success: true,
-            autoProcessed: false,
-            message: "Review and reply saved successfully",
-            reviewId: review._id,
-            replyId: reply._id,
-        });
-    } catch (error) {
-        console.error("Error processing review:", error);
-        res.status(500).json({ success: false, message: "Failed to process review" });
-    }
+// Explicitly reject retired Make.com webhook endpoints so they cannot trigger workflows.
+app.post("/api/webhook/review", (req, res) => {
+    res.status(410).json({
+        success: false,
+        message: "Make.com review ingestion has been removed. Connect Google Business Profile and use scheduled sync.",
+    });
+});
+app.post("/api/webhook/publish-result", (req, res) => {
+    res.status(410).json({
+        success: false,
+        message: "Make.com publish callbacks have been removed. Replies are published directly to Google.",
+    });
+});
+app.use("/api/webhook", (req, res) => {
+    res.status(410).json({
+        success: false,
+        message: "Webhook integrations have been removed",
+    });
 });
 
-// =========================
-// Start Server
-// =========================
+app.use((req, res) => {
+    res.status(404).json({ success: false, message: "Route not found" });
+});
+
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+    if (err && err.type === "entity.parse.failed") {
+        return res.status(400).json({ success: false, message: "Request body must be valid JSON" });
+    }
+    if (err && err.type === "entity.too.large") {
+        return res.status(413).json({ success: false, message: "Request body is too large" });
+    }
+    console.error("Unhandled error:", err && err.message);
+    const status = err && err.status >= 400 && err.status < 500 ? err.status : 500;
+    return res.status(status).json({
+        success: false,
+        message: status === 500 ? "Internal server error" : (err.message || "Request failed"),
+    });
+});
 
 const PORT = process.env.PORT || 5000;
 if (require.main === module) {
+    const missing = ["MONGO_URI", "JWT_SECRET"].filter((name) => !process.env[name]);
+    if (missing.length) {
+        console.error(`Missing required environment variables: ${missing.join(", ")}`);
+        process.exit(1);
+    }
+
+    if (!isOAuthConfigured()) {
+        console.error(
+            "Google OAuth is not fully configured " +
+            "(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_TOKEN_ENCRYPTION_KEY). " +
+            "Connect/sync/publish endpoints will return errors until these are set."
+        );
+    } else if (!isEncryptionConfigured()) {
+        console.error("GOOGLE_TOKEN_ENCRYPTION_KEY is invalid; token storage is disabled.");
+    }
+
+    if (isProductionRuntime() && !(process.env.FRONTEND_URL || "").trim()) {
+        console.warn("FRONTEND_URL is not set; OAuth callback redirects will use the default Vercel URL.");
+    }
+
     mongoose
         .connect(process.env.MONGO_URI)
         .then(() => {
             console.log("MongoDB connected");
-            app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+            app.listen(PORT, () => {
+                console.log(`Server running on port ${PORT}`);
+                startReviewSyncScheduler();
+            });
         })
         .catch((err) => {
             console.error("MongoDB connection failed:", err.message);
+            process.exit(1);
         });
 }
 

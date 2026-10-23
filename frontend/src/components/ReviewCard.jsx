@@ -5,6 +5,8 @@ export function ReviewCard({
     review,
     onApprove,
     onReject,
+    onRetryPublish,
+    onReconcilePublish,
     showReplyEditor = true,
 }) {
     if (!review) return null;
@@ -68,6 +70,8 @@ export function ReviewCard({
                         reply={review.reply}
                         onApprove={onApprove}
                         onReject={onReject}
+                        onRetryPublish={onRetryPublish}
+                        onReconcilePublish={onReconcilePublish}
                         readOnly={review.status !== "pending"}
                     />
                 </div>

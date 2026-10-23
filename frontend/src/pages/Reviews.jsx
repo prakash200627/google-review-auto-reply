@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { reviewsService, replyService } from "../services/api";
 import { ReviewCard } from "../components/ReviewCard";
 import { Loading } from "../components/Loading";
@@ -13,50 +13,98 @@ export function Reviews() {
     const [sentimentFilter, setSentimentFilter] = useState("all");
     const [successBanner, setSuccessBanner] = useState(null);
 
-    const loadReviews = async () => {
+    const fetchReviews = useCallback(
+        () =>
+            reviewsService
+                .getAll()
+                .then((data) => {
+                    if (data.success && data.reviews) {
+                        setReviews(data.reviews);
+                    }
+                })
+                .catch((err) => {
+                    setError(
+                        err.response?.data?.message ||
+                        "Failed to fetch reviews from server."
+                    );
+                })
+                .finally(() => setLoading(false)),
+        []
+    );
+
+    useEffect(() => {
+        fetchReviews();
+    }, [fetchReviews]);
+
+    const loadReviews = () => {
         setLoading(true);
         setError(null);
+        fetchReviews();
+    };
+
+    const applyServerReply = (reviewId, serverReply) => {
+        if (!serverReply) return;
+        setReviews((prev) =>
+            prev.map((r) =>
+                r._id === reviewId
+                    ? { ...r, status: serverReply.status || r.status, reply: { ...r.reply, ...serverReply } }
+                    : r
+            )
+        );
+    };
+
+    const handleApprove = async (reviewId, finalReply) => {
+        let res;
         try {
-            const data = await reviewsService.getAll();
-            if (data.success && data.reviews) {
-                setReviews(data.reviews);
-            }
+            res = await replyService.approve(reviewId, finalReply);
         } catch (err) {
-            setError(
-                err.response?.data?.message ||
-                "Failed to fetch reviews from server."
+            applyServerReply(reviewId, err.response?.data?.reply);
+            throw err;
+        }
+        if (res.success) {
+            setSuccessBanner(
+                res.publishState === "unknown"
+                    ? "Reply approved, but Google did not confirm the publish outcome. Check it before retrying."
+                    : "Reply approved and sent for publishing."
             );
-        } finally {
-            setLoading(false);
+            setTimeout(() => setSuccessBanner(null), 6000);
+            applyServerReply(reviewId, {
+                status: "approved",
+                finalReply: finalReply || undefined,
+                lastPublishError: "",
+                ...res.reply,
+            });
         }
     };
 
-    useEffect(() => {
-        loadReviews();
-    }, []);
-
-    const handleApprove = async (reviewId, finalReply) => {
-        const res = await replyService.approve(reviewId, finalReply);
-        if (res.success) {
-            setSuccessBanner("Reply approved successfully!");
-            setTimeout(() => setSuccessBanner(null), 4000);
-            // Update review locally
-            setReviews((prev) =>
-                prev.map((r) =>
-                    r._id === reviewId
-                        ? {
-                              ...r,
-                              status: "replied",
-                              reply: {
-                                  ...r.reply,
-                                  status: "approved",
-                                  finalReply: finalReply || r.reply?.draftReply,
-                              },
-                          }
-                        : r
-                )
-            );
+    const handleRetryPublish = async (reviewId) => {
+        let res;
+        try {
+            res = await replyService.retryPublish(reviewId);
+        } catch (err) {
+            applyServerReply(reviewId, err.response?.data?.reply);
+            throw err;
         }
+        applyServerReply(reviewId, res.reply);
+        setSuccessBanner(
+            res.publishState === "unknown"
+                ? "Google still did not confirm the publish outcome."
+                : "Reply re-sent for publishing."
+        );
+        setTimeout(() => setSuccessBanner(null), 6000);
+    };
+
+    const handleReconcilePublish = async (reviewId) => {
+        let res;
+        try {
+            res = await replyService.reconcilePublish(reviewId);
+        } catch (err) {
+            applyServerReply(reviewId, err.response?.data?.reply);
+            throw err;
+        }
+        applyServerReply(reviewId, { ...res.reply, publishStale: false });
+        setSuccessBanner("Publish status marked unknown. Check Google before retrying.");
+        setTimeout(() => setSuccessBanner(null), 6000);
     };
 
     const handleReject = async (reviewId) => {
@@ -153,6 +201,7 @@ export function Reviews() {
                     <input
                         type="text"
                         className="search-input"
+                        aria-label="Search reviews"
                         placeholder="Search reviewer name, review text, or location..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -173,6 +222,7 @@ export function Reviews() {
                         <label className="filter-label">Status:</label>
                         <select
                             className="filter-select"
+                            aria-label="Filter by status"
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
                         >
@@ -189,6 +239,7 @@ export function Reviews() {
                         <label className="filter-label">Sentiment:</label>
                         <select
                             className="filter-select"
+                            aria-label="Filter by sentiment"
                             value={sentimentFilter}
                             onChange={(e) => setSentimentFilter(e.target.value)}
                         >
@@ -227,7 +278,7 @@ export function Reviews() {
                     <h3 className="empty-state-title">No Reviews Found</h3>
                     <p className="empty-state-desc">
                         {reviews.length === 0
-                            ? "You don't have any reviews yet. Incoming reviews via Make.com will appear here."
+                            ? "You don't have any reviews yet. Connect Google Business Profile to sync reviews here."
                             : "No reviews matched your current search or filter criteria."}
                     </p>
                     {(statusFilter !== "all" || sentimentFilter !== "all" || searchTerm) && (
@@ -252,6 +303,8 @@ export function Reviews() {
                             review={review}
                             onApprove={handleApprove}
                             onReject={handleReject}
+                            onRetryPublish={handleRetryPublish}
+                            onReconcilePublish={handleReconcilePublish}
                             showReplyEditor={true}
                         />
                     ))}

@@ -90,15 +90,24 @@ router.get("/", authMiddleware, async (req, res) => {
 });
 
 const { generateAnalysis } = require("../services/ai");
+const createRateLimiter = require("../middleware/rateLimit");
+
+const analysisLimiter = createRateLimiter({
+    windowMs: 10 * 60 * 1000,
+    max: 30,
+    message: "Too many analysis requests. Please wait a few minutes and try again.",
+    keyGenerator: (req) => `org:${req.organizationId}`,
+});
 
 // GET /api/stats/analysis - AI analysis for logged-in organization
-router.get("/analysis", authMiddleware, async (req, res) => {
+router.get("/analysis", authMiddleware, analysisLimiter, async (req, res) => {
     try {
         const result = await generateAnalysis(req.organizationId);
         res.json({
             success: true,
             analysis: result.summary,
             usedOpenAI: result.usedOpenAI,
+            reviewsAnalyzed: result.reviewsAnalyzed,
         });
     } catch (error) {
         console.error("Get stats analysis error:", error.message);

@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "./context/AuthContext";
+import { AuthProvider } from "./context/AuthContext";
+import { useAuth } from "./context/useAuth";
 import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
@@ -7,6 +8,7 @@ import { Reviews } from "./pages/Reviews";
 import { PendingReviews } from "./pages/PendingReviews";
 import { Summary } from "./pages/Summary";
 import Analysis from "./pages/Analysis";
+import { GoogleSettings } from "./pages/GoogleSettings";
 
 function ProtectedRoute({ children }) {
     const { isAuthenticated } = useAuth();
@@ -54,7 +56,8 @@ export default function App() {
                         <Route path="analysis" element={<Analysis />} />
                         <Route path="reviews" element={<Reviews />} />
                         <Route path="pending" element={<PendingReviews />} />
-                        <Route path="settings" element={<Navigate to="/dashboard" replace />} />
+                        <Route path="settings" element={<Navigate to="/settings/google" replace />} />
+                        <Route path="settings/google" element={<GoogleSettings />} />
                         <Route path="*" element={<Navigate to="/dashboard" replace />} />
                     </Route>
                 </Routes>

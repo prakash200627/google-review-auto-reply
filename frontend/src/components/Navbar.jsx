@@ -1,4 +1,4 @@
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import ModeSelector from "./ModeSelector";
 
 export function Navbar({ pageTitle }) {

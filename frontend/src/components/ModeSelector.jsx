@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useState, useEffect } from 'react';
+import { useAuth } from '../context/useAuth';
 import { organizationService } from '../services/api';
 
 export default function ModeSelector() {

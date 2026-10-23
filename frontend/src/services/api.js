@@ -114,6 +114,14 @@ export const replyService = {
         const res = await api.post("/reply/reject", { reviewId });
         return res.data;
     },
+    retryPublish: async (reviewId) => {
+        const res = await api.post("/reply/retry-publish", { reviewId });
+        return res.data;
+    },
+    reconcilePublish: async (reviewId) => {
+        const res = await api.post("/reply/reconcile-publish", { reviewId });
+        return res.data;
+    },
 };
 
 export const locationsService = {
@@ -123,6 +131,37 @@ export const locationsService = {
     },
     create: async (name, googleLocationId) => {
         const res = await api.post("/locations", { name, googleLocationId });
+        return res.data;
+    },
+};
+
+export const googleService = {
+    getStatus: async () => {
+        const res = await api.get("/google/status");
+        return res.data;
+    },
+    startOAuth: async (returnPath = "/settings/google") => {
+        const res = await api.post("/google/oauth/start", { returnPath });
+        return res.data;
+    },
+    discoverLocations: async () => {
+        const res = await api.get("/google/locations/discover");
+        return res.data;
+    },
+    connectLocations: async (locations) => {
+        const res = await api.post("/google/locations/connect", { locations });
+        return res.data;
+    },
+    disconnectLocation: async (locationId) => {
+        const res = await api.post(`/google/locations/${locationId}/disconnect`);
+        return res.data;
+    },
+    disconnect: async () => {
+        const res = await api.post("/google/disconnect");
+        return res.data;
+    },
+    syncNow: async () => {
+        const res = await api.post("/google/sync/now");
         return res.data;
     },
 };

@@ -873,6 +873,21 @@ body {
     margin-bottom: 0.5rem;
 }
 
+.publish-history {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+}
+
+.publish-history summary {
+    cursor: pointer;
+}
+
+.publish-history ol {
+    margin: 0.35rem 0 0;
+    padding-left: 1.25rem;
+}
+
 /* ===================================================
    PAGE HEADERS & BANNERS
    =================================================== */

@@ -59,4 +59,7 @@ const reviewSchema = new mongoose.Schema(
     }
 );
 
+reviewSchema.index({ orgId: 1, createdAt: -1, _id: -1 });
+reviewSchema.index({ orgId: 1, status: 1, createdAt: -1, _id: -1 });
+
 module.exports = mongoose.model("Review", reviewSchema);

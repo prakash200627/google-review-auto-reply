@@ -1,5 +1,5 @@
 // Summary Page – business-level overview using exact Dashboard visual language
-import React, { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { statsService } from "../services/api";
 import { Loading } from "../components/Loading";
 import { ErrorMessage } from "../components/ErrorMessage";
@@ -108,7 +108,7 @@ export function Summary() {
   const praised  = PRAISE_GROUPS.filter(g => g.kws.some(k => lower.includes(k))).map(g => g.label);
   const concerns = CONCERN_GROUPS.filter(g => g.kws.some(k => lower.includes(k))).map(g => g.label);
 
-  let keyTakeaway = "";
+  let keyTakeaway;
   const joinLabels = (arr) =>
     arr.length === 1
       ? arr[0]
@@ -116,14 +116,14 @@ export function Summary() {
 
   if (praised.length > 0 && concerns.length > 0) {
     keyTakeaway =
-      `Customers consistently praise the ${joinLabels(praised)}, while ${joinLabels(concerns)} ` +
-      `stand out as the main areas requiring attention.`;
+      `The summary highlights ${joinLabels(praised)} as strengths, while ${joinLabels(concerns)} ` +
+      `come up as areas to watch.`;
   } else if (praised.length > 0) {
     const posPct = total > 0 ? Math.round((positive / total) * 100) : null;
-    keyTakeaway = `Customer feedback is largely positive, with ${joinLabels(praised)} receiving consistent recognition` +
-      (posPct !== null ? ` (${posPct}% of reviews positive).` : ".");
+    keyTakeaway = `The summary highlights ${joinLabels(praised)} as strengths` +
+      (posPct !== null ? ` (${posPct}% of reviews are positive).` : ".");
   } else if (concerns.length > 0) {
-    keyTakeaway = `Key areas to focus on include ${joinLabels(concerns)} based on recurring customer feedback.`;
+    keyTakeaway = `The summary points to ${joinLabels(concerns)} as areas to focus on.`;
   } else {
     // Fallback: use second sentence of AI text so it doesn't duplicate the first
     const sentences = aiText.match(/[^.!?]+[.!?]+/g) || [];

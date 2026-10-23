@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
 
 function authMiddleware(req, res, next) {
     try {
@@ -11,12 +12,20 @@ function authMiddleware(req, res, next) {
             });
         }
 
-        const token = authHeader.split(" ")[1];
+        const token = authHeader.slice("Bearer ".length).trim();
 
         const decoded = jwt.verify(
             token,
-            process.env.JWT_SECRET
+            process.env.JWT_SECRET,
+            { algorithms: ["HS256"] }
         );
+
+        if (!decoded || !mongoose.isValidObjectId(decoded.organizationId)) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid or expired token",
+            });
+        }
 
         req.organizationId = decoded.organizationId;
 

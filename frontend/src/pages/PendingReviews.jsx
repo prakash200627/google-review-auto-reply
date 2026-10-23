@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useOutletContext, Link } from "react-router-dom";
 import { reviewsService, replyService } from "../services/api";
 import { ReviewCard } from "../components/ReviewCard";
@@ -12,27 +12,34 @@ export function PendingReviews() {
     const [error, setError] = useState(null);
     const [notification, setNotification] = useState(null);
 
-    const loadPendingReviews = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const data = await reviewsService.getPending();
-            if (data.success && data.reviews) {
-                setPendingReviews(data.reviews);
-            }
-        } catch (err) {
-            setError(
-                err.response?.data?.message ||
-                "Failed to fetch pending reviews from server."
-            );
-        } finally {
-            setLoading(false);
-        }
-    };
+    const fetchPendingReviews = useCallback(
+        () =>
+            reviewsService
+                .getPending()
+                .then((data) => {
+                    if (data.success && data.reviews) {
+                        setPendingReviews(data.reviews);
+                    }
+                })
+                .catch((err) => {
+                    setError(
+                        err.response?.data?.message ||
+                        "Failed to fetch pending reviews from server."
+                    );
+                })
+                .finally(() => setLoading(false)),
+        []
+    );
 
     useEffect(() => {
-        loadPendingReviews();
-    }, []);
+        fetchPendingReviews();
+    }, [fetchPendingReviews]);
+
+    const loadPendingReviews = () => {
+        setLoading(true);
+        setError(null);
+        fetchPendingReviews();
+    };
 
     const showNotification = (message, type = "success") => {
         setNotification({ message, type });
@@ -40,9 +47,37 @@ export function PendingReviews() {
     };
 
     const handleApprove = async (reviewId, finalReply) => {
-        const res = await replyService.approve(reviewId, finalReply);
+        let res;
+        try {
+            res = await replyService.approve(reviewId, finalReply);
+        } catch (err) {
+            const serverReply = err.response?.data?.reply;
+            if (serverReply?.status && serverReply.status !== "pending") {
+                showNotification(err.response?.data?.message || "This review was already handled.", "info");
+                if (refreshStats) refreshStats();
+            }
+            if (serverReply) {
+                setPendingReviews((prev) =>
+                    serverReply.status && serverReply.status !== "pending"
+                        ? prev.filter((r) => r._id !== reviewId)
+                        : prev.map((r) => (r._id === reviewId ? { ...r, reply: { ...r.reply, ...serverReply } } : r))
+                );
+            }
+            throw err;
+        }
         if (res.success) {
-            showNotification("Reply approved successfully! The review has been marked as replied.");
+            if (res.publishState === "unknown") {
+                showNotification(
+                    "Reply approved, but Google did not confirm the publish outcome. Check it under All Reviews before retrying.",
+                    "info"
+                );
+            } else {
+                showNotification(
+                    res.publishState === "published"
+                        ? "Reply published to Google Business Profile."
+                        : "Reply approved and sent to Google for publishing."
+                );
+            }
             // Remove review from pending list immediately
             setPendingReviews((prev) => prev.filter((r) => r._id !== reviewId));
             // Trigger layout stats update
@@ -114,7 +149,7 @@ export function PendingReviews() {
                     <div className="empty-state-icon">🎉</div>
                     <h3 className="empty-state-title">Inbox Zero!</h3>
                     <p className="empty-state-desc">
-                        All pending reviews have been processed. Great job! Incoming reviews received from Google Maps via Make.com will automatically arrive here.
+                        All pending reviews have been processed. Great job! New reviews sync automatically from Google Business Profile.
                     </p>
                     <div className="empty-state-actions">
                         <Link to="/dashboard" className="btn btn-secondary">

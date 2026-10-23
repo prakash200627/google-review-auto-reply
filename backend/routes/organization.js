@@ -111,6 +111,29 @@ router.get('/openai-key', authMiddleware, async (req, res) => {
 router.post('/openai-key', authMiddleware, async (req, res) => {
     try {
         const { apiKey, enabled } = req.body || {};
+
+        if (apiKey !== undefined) {
+            if (typeof apiKey !== 'string' || apiKey.trim() === '') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'API key must be a non-empty string.',
+                });
+            }
+            if (apiKey.trim().length > 300 || /\s/.test(apiKey.trim())) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'API key format is invalid.',
+                });
+            }
+        }
+
+        if (enabled !== undefined && typeof enabled !== 'boolean') {
+            return res.status(400).json({
+                success: false,
+                message: 'enabled must be true or false.',
+            });
+        }
+
         const organization = await Organization.findById(req.organizationId).select('+openaiApiKey');
         if (!organization) {
             return res.status(404).json({
@@ -120,17 +143,11 @@ router.post('/openai-key', authMiddleware, async (req, res) => {
         }
 
         if (apiKey !== undefined) {
-            if (typeof apiKey !== 'string' || apiKey.trim() === '') {
-                return res.status(400).json({
-                    success: false,
-                    message: 'API key must be a non-empty string.',
-                });
-            }
             organization.openaiApiKey = apiKey.trim();
         }
 
         if (enabled !== undefined) {
-            organization.openaiEnabled = Boolean(enabled);
+            organization.openaiEnabled = enabled;
         }
 
         await organization.save();
