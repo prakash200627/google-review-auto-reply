@@ -1,200 +1,180 @@
-# Google Review Auto-Reply
+# TRONX Review Auto-Reply
 
-Syncs Google Business Profile reviews over OAuth, drafts replies with OpenAI `gpt-4o-mini`, routes risky reviews to a human, and publishes approved replies **directly** through the Google Business Profile API.
+Unified **Next.js 16** App Router application for Google Business Profile review management with multi-business Super Admin / owner roles.
 
-Make.com is **not** part of this architecture.
+**Handover docs:** [`HANDOVER.md`](./HANDOVER.md) · [`PRODUCTION_ENVIRONMENT.md`](./PRODUCTION_ENVIRONMENT.md) · [`PRODUCTION_DEPLOYMENT.md`](./PRODUCTION_DEPLOYMENT.md) · [`BACKUP_AND_RECOVERY.md`](./BACKUP_AND_RECOVERY.md) · [`SECURITY_CHECKLIST.md`](./SECURITY_CHECKLIST.md)
+
+## What works in this codebase
+
+- Google OAuth (PKCE, encrypted tokens) — **Super Admin** starts connect (owners may use platform Google)
+- Location discovery / upsert — **Super Admin** only; owners see assigned locations
+- Review sync (Google list → Mongo), persisted AI drafts, approve/edit, **manual** publish
+- **SA Reviews + ORM dashboards are organization-scoped** (active org cookie); Admin APIs remain SA platform tools
+- Super Admin business CRUD, lifecycle, location assignment, owners, payments, audit log
+- Dedicated `/orm/business/[id]` and `/orm/group/[id]` dashboards
+- Staff SEO / GMB service jobs / fake-review flags; owner read-only SEO/services/reports/billing
+- Auto-publish **config + safety controls** (atomic claims, scheduler secret, kill switch default OFF)
+- Business isolation and plan/lifecycle gates enforced server-side
+- Development Mongo policy: **Atlas (`*.mongodb.net`) or localhost** allowed; other remotes need `ALLOW_REMOTE_MONGO=1`
+
+**Not implemented / intentionally gated:** production auto-publish enqueue + scheduler, email password delivery, payment gateways, sentiment analytics, automatic SEO crawling. Permanent business deletion is implemented for Super Admin (archived businesses only; typed confirmations; audit/payments retained).
 
 ## Stack
 
-| Layer | Technology |
+- Next.js 16 (App Router) + TypeScript + Tailwind CSS 4
+- MongoDB / Mongoose
+- Google Business Profile OAuth + APIs
+- OpenAI Chat Completions for drafts only
+- Vitest (mocked; no live Google/OpenAI in tests)
+
+## Environment variable names
+
+Copy `.env.example` → `.env.local` (never commit `.env.local`).
+
+| Name | Purpose |
 | --- | --- |
-| Frontend | React + Vite (Vercel) |
-| Backend | Node.js + Express (Render) |
-| Database | MongoDB Atlas |
-| AI | OpenAI SDK (`gpt-4o-mini`) |
-| Google | OAuth 2.0 + Business Profile APIs (`business.manage`) |
+| `MONGODB_URI` | MongoDB Atlas `mongodb+srv://…mongodb.net/…` (local Next.js + Atlas) |
+| `ALLOW_REMOTE_MONGO` | Escape hatch for non-Atlas / non-localhost hosts in development only |
+| `AUTH_SECRET` | Signed user session cookie (≥16 chars) |
+| `SUPERADMIN_EMAIL` | Bootstrap Super Admin email (only when users collection is empty) |
+| `SUPERADMIN_PASSWORD` | Bootstrap Super Admin password (same gate) |
+| `GOOGLE_CLIENT_ID` | OAuth client id |
+| `GOOGLE_CLIENT_SECRET` | OAuth client secret |
+| `GOOGLE_REDIRECT_URI` | Must match Google Cloud (local: `http://localhost:3000/api/auth/google/callback`) |
+| `GOOGLE_TOKEN_ENCRYPTION_KEY` | 32-byte key (64 hex or base64) for token encryption at rest |
+| `OPENAI_API_KEY` | Server-side draft generation |
+| `OPENAI_MODEL` | Optional (default `gpt-4o-mini`) |
+| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Optional outlet photo library |
+| `APP_URL` | App base URL for OAuth redirects |
+| `ALLOW_MIGRATE_APPLY` | Must be `1` to allow migration `--apply` (indexes only) |
 
-## Features
+Never use `NEXT_PUBLIC_*` for secrets. Production sets `secure` cookies when `NODE_ENV=production`. Full production checklist: [`PRODUCTION_ENVIRONMENT.md`](./PRODUCTION_ENVIRONMENT.md).
 
-- Google OAuth 2.0 with PKCE, encrypted refresh/access tokens, and org-scoped connections
-- Location discovery and multi-tenant location linking
-- Scheduled review sync (default every 5 minutes) with MongoDB lease coordination
-- Idempotent review ingestion and duplicate AI-generation prevention
-- Manual / automatic reply modes with existing risk detection
-- Direct `accounts.locations.reviews.updateReply` publishing
-- Publish attempt tracking, stale reconciliation, and explicit retries
-- Dashboard routes: `/dashboard`, `/summary`, `/analysis`, `/pending`, `/reviews`, `/settings/google`
+## Local setup
 
-## Local development
-
-### Backend
-
-```bash
-cd backend
-cp .env.example .env   # fill in values (never commit .env)
-npm install
-npm start
-```
-
-### Frontend
+Intended architecture: **Next.js on Windows (`npm run dev`) + MongoDB Atlas**. No Docker. No local MongoDB requirement.
 
 ```bash
-cd frontend
-# optional: VITE_API_URL=http://localhost:5000/api
+cp .env.example .env.local
+# Set MONGODB_URI to your Atlas mongodb+srv:// URI (never commit .env.local)
 npm install
+npm run typecheck
+npm test
 npm run dev
 ```
 
-### Tests and build checks
+Development accepts Atlas (`*.mongodb.net`) or localhost. Do not commit credentials.
 
-```bash
-cd backend && npm test
-cd frontend && npm run lint
-cd frontend && npm run build
-```
+### First Super Admin
 
-Location duplicate audit (read-only):
+1. Leave the `users` collection empty.
+2. Set `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` in `.env.local`.
+3. Sign in at `/login` with those credentials once — creates the Super Admin.
+4. Remove or rotate bootstrap env values after first login.
 
-```bash
-cd backend && npm run audit:locations
-```
+### Connect Google (Super Admin)
 
-## Environment variables
+1. Register redirect URI `http://localhost:3000/api/auth/google/callback`.
+2. Sign in as Super Admin → **GMB → Connection** (`/gmb`) → Connect Google.
+3. Discover locations under **GMB → Locations** (Super Admin). Fetch reviews from a location detail page (explicit action only).
 
-See `backend/.env.example` for the full list. Required names:
+### Create first business and owner
 
-| Variable | Purpose |
+1. Super Admin → **Businesses** (`/admin/businesses`) or **Onboarding** (`/admin/onboarding`).
+2. Create business: name, org id (from Google workspace cookie / admin form), brand voice, language, reply preference (auto is **stored only** — not implemented).
+3. Assign **unassigned** locations explicitly (never bulk-auto).
+4. Optionally set owner email + password (≥8 chars). Share the password **out-of-band** — this app does not send email.
+5. Owner signs in at `/login` → `/orm` (scoped metrics + settings) and `/orm/reviews` (Inbox / Drafts / Published for assigned businesses only).
+
+### Manual owner onboarding steps that remain
+
+- Password handoff is manual (no email/reset flow).
+- Super Admin must discover locations and assign them before owners see them.
+- Google connection is org-level; owners do not connect Google themselves.
+
+## Scripts
+
+| Command | Purpose |
 | --- | --- |
-| `MONGO_URI` | MongoDB connection string |
-| `JWT_SECRET` | Auth token signing |
-| `OPENAI_API_KEY` | Fallback OpenAI key |
-| `GOOGLE_CLIENT_ID` | OAuth web client ID |
-| `GOOGLE_CLIENT_SECRET` | OAuth web client secret |
-| `GOOGLE_REDIRECT_URI` | Backend callback, e.g. `https://<render>/api/google/oauth/callback` |
-| `GOOGLE_TOKEN_ENCRYPTION_KEY` | 32-byte AES-256-GCM key (64 hex chars or base64) |
-| `FRONTEND_URL` | Origin for post-OAuth redirects |
-| `REVIEW_SYNC_INTERVAL_MINUTES` | Sync interval (1–60, default `5`) |
-| `PUBLISH_STALE_AFTER_MINUTES` | Stale in-flight publish threshold (default `15`) |
-| `CORS_ORIGINS` | Extra production frontend origins |
-| `DISABLE_REVIEW_SYNC` | Set `true` to disable the in-process scheduler |
+| `npm run dev` | Development server |
+| `npm run build` | Production build |
+| `npm run start` | Start production server |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | TypeScript |
+| `npm test` | Vitest (mocked) |
 
-Obsolete Make.com variables (`MAKE_WEBHOOK_SECRET`, `MAKE_PUBLISH_CALLBACK_SECRET`, `MAKE_APPROVED_REPLY_WEBHOOK_URL`) are **not used** and must not be required.
+## Migration
 
-## Google Cloud setup (manual)
+`scripts/migrateBusinessBackfill.mjs` reports unassigned locations/reviews and can ensure `businessId` indexes. It **never** auto-assigns locations.
 
-1. Create a Google Cloud project and enable:
-   - My Business Account Management API
-   - My Business Business Information API
-   - Google My Business API (reviews v4)
-2. Configure the OAuth consent screen. Scope: `https://www.googleapis.com/auth/business.manage` (plus OpenID email/profile for account label).
-3. Create an **OAuth 2.0 Web application** client.
-4. Add authorized redirect URI(s) matching `GOOGLE_REDIRECT_URI`.
-5. Ensure the Google account that will connect owns or manages the Business Profile locations (verified locations are required for review APIs).
-6. Business Profile API access may require Google’s partner / API access process for production. Until access is granted, OAuth may succeed while location/review calls fail — treat that as an external blocker.
+```bash
+node --env-file=.env.local scripts/migrateBusinessBackfill.mjs
+ALLOW_MIGRATE_APPLY=1 node --env-file=.env.local scripts/migrateBusinessBackfill.mjs --apply
+```
 
-## OAuth flow
+Only run `--apply` against a **positively identified non-production** database. Classify first with `node scripts/classifyMongoUri.mjs` (prints labels only, not the URI).
 
-1. Authenticated user opens **Google Connection** (`/settings/google`) and clicks Connect.
-2. Backend creates a short-lived OAuth `state` + PKCE verifier bound to the organization.
-3. Browser redirects to Google; Google returns to `GET /api/google/oauth/callback`.
-4. Backend validates state (expiry + single use), exchanges the code server-side, encrypts tokens at rest, and redirects to the frontend.
-5. User discovers locations and connects selected ones to their organization.
-6. Access tokens never leave the backend. Missing encryption configuration fails closed (no plaintext token storage).
+## Indexes (created by Mongoose / migration)
 
-## Review synchronization
-
-- An in-process scheduler runs in the backend (not the browser).
-- Default interval: **5 minutes** (`REVIEW_SYNC_INTERVAL_MINUTES`).
-- **Scheduled worker** (`runReviewSyncCycle`): synchronizes every organization that has eligible locations.
-- **Manual sync** (`POST /api/google/sync/now`): synchronizes **only** the authenticated organization (JWT). Client-supplied `orgId` cannot retarget another tenant. Rate-limited per org.
-- Leases use a unique fencing `ownerId` + `generation` per acquisition (`SyncLease`). Renew/release and location checkpoint writes succeed only while that owner still holds the lease. Stale workers cannot advance watermarks or page tokens after a newer worker takes over.
-- Per-org lease keys (`review-sync:org:{orgId}`) allow different organizations to sync without blocking each other; a global cycle lease coordinates scheduled runners.
-- Only `syncEnabled` locations with a linked `connectionId` and Business Profile `googleAccountId` are synced.
-- **Watermark:** after a **fully successful** pass (zero review-processing failures and zero malformed payloads), `syncWatermarkUpdateTime` stores the newest processed Google `updateTime`. Later syncs paginate newest-first and stop at reviews strictly older than the watermark (equality is re-processed; ingestion is idempotent). If any review fails to process or arrives malformed (missing id/rating/resource name), the previous watermark is retained, `syncPassIncomplete` is set, and the page-token checkpoint is cleared immediately so the next run retries from newest — the watermark never advances past an incomplete pass.
-- **Durable incomplete marker:** `Location.syncPassIncomplete` is written as soon as a processing failure or malformed payload is seen (fenced write). If the process crashes before final cleanup, the next run sees this flag, ignores any leftover page token, and restarts from newest with the prior watermark.
-- **Malformed payloads:** counted separately from idempotent duplicates (`malformedCount` / `malformedReasons` on the sync result). Operators see a single structured `console.warn` per pass (`event: review_sync_malformed_payload` with `locationId`, `count`, `reasons` only — no review text/PII), plus `Location.lastSyncError` mentioning malformed counts, and `syncPassIncomplete: true` until a clean pass clears it.
-- Clean interrupted page chains (no incomplete marker) resume via `syncCheckpointPageToken` without early watermark stop until that chain finishes.
-- Reviews are upserted by `googleReviewId` (idempotent). One failing location does not stop others.
-- **Residual concurrency:** a database lease cannot cancel an in-flight Google HTTP request. If ownership is lost mid-request, further DB writes are refused; duplicate ingest remains safe. This is **not** exactly-once external I/O.
-
-### Relinking existing locations
-
-Historical `Location` rows created before Google OAuth **do not sync** until an authorized user:
-
-1. Connect Google on **Google Connection**.
-2. **Refresh Google locations** (discover).
-3. Select and **Connect** each business that should sync.
-
-The app will **not** auto-associate historical locations by name. `googleLocationId` collisions with another organization are rejected. Unlinked locations stay in the DB for history but remain `syncEnabled: false` / without `connectionId` until explicitly linked.
-
-## AI replies and automatic mode (preserved policy)
-
-- Model: OpenAI `gpt-4o-mini` (organization key override still supported).
-- **Manual mode:** drafts wait in `/pending` until approve/reject.
-- **Auto mode:** non-flagged reviews of **any** star rating (including 1-star) are approved and published immediately.
-- Flagged / high-risk reviews always escalate to human review and are **not** auto-published.
-- Duplicate deliveries do not create duplicate replies or re-run auto-publish.
-
-## Direct publishing and reconciliation
-
-| Reply status | publishState | Meaning | Next step |
-| --- | --- | --- | --- |
-| `approved` | `sending` | Google API request in flight | Wait, or reconcile if stale |
-| `published` | `published` | Google returned a successful `updateReply` | Done |
-| `approved` | `unknown` | Timeout / ambiguous network outcome | Check Google, then Retry Publishing |
-| `pending` | `failed` | Definitive failure | Approve again |
-
-- Attempt IDs are hashed; concurrent publishes use atomic claim updates.
-- Ambiguous timeouts are **never** auto-retried.
-- `POST /api/reply/reconcile-publish` may confirm publication via Google `getReview` when the remote comment matches; otherwise it marks `unknown` without resending.
-- `POST /api/reply/retry-publish` is an explicit resend for `unknown` only (Google keeps one reply per review).
-
-Retired Make.com routes respond with **410 Gone** and do not mutate data:
-
-- `POST /api/webhook/review`
-- `POST /api/webhook/publish-result`
-
-## Deployment notes (configuration only)
-
-This repository change set does **not** deploy itself. When you are ready to configure staging/production manually:
-
-### Render (backend)
-
-- Set all Google OAuth and encryption variables from `.env.example`.
-- Set `FRONTEND_URL` to the Vercel origin.
-- Set `NODE_ENV=production`.
-- Ensure a single web service keeps the Node process alive so the sync scheduler can run (or run multiple instances — the MongoDB lease coordinates them).
-- Do **not** set obsolete Make.com variables.
-
-### Vercel (frontend)
-
-- Set `VITE_API_URL` to the Render API base (`https://<host>/api`).
-- Redeploy after backend Google routes are live.
-
-### Safe rollout sequence
-
-1. Configure Google Cloud OAuth + enable APIs.
-2. Set Render env vars (including `GOOGLE_TOKEN_ENCRYPTION_KEY`).
-3. Deploy backend, confirm `/` reports healthy and OAuth start works.
-4. Connect a staging Google account and one location; run **Sync reviews now**.
-5. Approve a test reply and confirm it appears on Google.
-6. Deploy frontend with the Google Connection page.
-
-## Migration notes
-
-- Existing organizations, users, reviews, and replies are preserved.
-- Existing `Location` documents remain; add Business Profile `googleAccountId` + `connectionId` by connecting through the new UI (see Relinking above).
-- `GoogleConnection.googleUserSub` is the OIDC subject. Legacy field `GoogleConnection.googleAccountId` stores the **same** OIDC subject for compatibility — it is **not** a GBP `accounts/{id}` (that lives on `Location.googleAccountId`).
-- Disconnect attempts Google token revocation (`POST https://oauth2.googleapis.com/revoke`) then deletes local credentials. If revoke is not confirmed, local data is still removed; the user may need to revoke the app under their Google Account permissions.
-- No production index builds or data deletes are performed by application startup.
-- Historical replies may still show `publishState: "accepted"` from the Make.com era; new publishes use `published` directly.
+- Locations: `{ orgId, googleLocationName }` unique; `businessId`
+- Reviews: `{ orgId, googleReviewName }` unique; `businessId`; `{ locationId, updateTime }`
+- Businesses: `{ name, orgId }`; `orgId`; `ownerUserId`; `active`
+- Users: unique `email`; `role`
 
 ## Security notes
 
-- JWT auth on all dashboard and Google management routes.
-- Manual sync is organization-scoped and rate-limited; it cannot trigger other tenants' Google/AI work.
-- OAuth state: cryptographically random, short-lived, single-use, org-bound.
-- Return paths allowlisted (no open redirects).
-- Tokens encrypted with versioned AES-256-GCM (`v1:` prefix).
-- Rate limiting, payload limits, and production CORS allowlisting retained.
-- Secrets are never logged or returned in API responses.
+- Provisional org cookie alone cannot authorize protected business ops (integrity ≠ authorization).
+- Super Admin switches the active Google workspace only via `POST /api/admin/organizations/select` or a completed OAuth callback — not by forging cookies or passing `orgId` on OAuth start.
+- Location discovery and OAuth start require Super Admin.
+- Inactive owners/businesses are denied owner workspace access.
+- Manual publish validates ownership and only updates Mongo after Google success.
+- Cookie-authenticated mutations check `Origin`/`Referer` when present (SameSite=Lax is the primary CSRF control). OAuth callback GET is exempt (Google redirect).
+- Automatic publishing is **not** implemented.
+- Audit events are structured JSON lines on stdout (`type:"audit"`). They are **not** tamper-proof.
+
+## Rate-limit limitations
+
+Login and AI draft throttles are **process-local in-memory**. Multi-instance or serverless deployments do not share counters — each instance enforces independently. Plan a shared store before high-traffic production if abuse resistance must be cluster-wide.
+
+## Deployment safeguards
+
+Prefer a **unified Next.js** host (e.g. Vercel or similar) with MongoDB Atlas. The old Vercel-frontend + Render-backend split is **retired** in favor of this app.
+
+### Staging vs production
+
+- Use **separate** MongoDB databases, OAuth clients / redirect URIs, and `AUTH_SECRET` / token encryption keys for staging and production.
+- Never point a staging app at a production Google Business Profile or customer listings without explicit written authorization.
+- Do not run live publish tests against customer locations unless authorized.
+
+### Secrets rotation
+
+- Rotate `AUTH_SECRET`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `OPENAI_API_KEY`, and bootstrap Super Admin credentials on a schedule or after suspected exposure.
+- Rotating `AUTH_SECRET` invalidates signed user and org cookies (users must sign in again; Super Admin must re-select / reconnect org context).
+- Rotating the token encryption key requires reconnecting Google (existing ciphertext will not decrypt).
+
+### Database backup and restore
+
+- Backups and restores are an **operator responsibility** (e.g. Atlas continuous backup). This repository does not ship or verify backup infrastructure.
+- Before restore drills, confirm the target URI with `node scripts/classifyMongoUri.mjs` (labels only — never print full secrets in tickets).
+
+### Migrations
+
+- Dry-run first: `node --env-file=.env.local scripts/migrateBusinessBackfill.mjs`
+- Apply indexes only against a **positively identified non-production** database with `ALLOW_MIGRATE_APPLY=1` and `--apply`.
+- Migrations never auto-assign locations or publish reviews.
+
+### Product limitations (current)
+
+- No automatic publishing (even if `replyMode=auto` is stored).
+- No email delivery for owner passwords or resets (out-of-band only).
+- No org-per-admin allowlist (deployment-scoped Super Admin operators).
+- Process-local rate limits as noted above.
+- No dedicated pending-approvals queue (use Reviews “Needs reply” / unreplied filter).
+- No sentiment analytics or AI summary dashboards.
+- Legacy risk-scanner UI/service was not ported into this Next.js app (manual publish + DEMO/TEST sanitization remain).
+
+Do not deploy until secrets, redirect URIs, and a confirmed **positively non-production** database (`node scripts/classifyMongoUri.mjs`) are configured. Prefer committing the Next.js tree before staging deploy so the release is reproducible from Git.
+
+### Local demo (Native South & Brew Times)
+
+Operator checklist (no automatic DB writes or live publishing): see [`DEMO_NATIVE_SOUTH_BREW_TIMES.md`](./DEMO_NATIVE_SOUTH_BREW_TIMES.md).
