@@ -5,6 +5,7 @@ import { OrmMetricGrid } from "@/components/orm/OrmMetricGrid";
 import { RatingDistribution } from "@/components/orm/RatingDistribution";
 import { RecentReviewsList } from "@/components/orm/RecentReviewsList";
 import { OwnerBusinessPanel } from "@/components/OwnerBusinessPanel";
+import { SuperAdminGoogleProfileEditor } from "@/components/SuperAdminGoogleProfileEditor";
 import { isAuthUser, requireAuthUser } from "@/lib/auth/authorize";
 import { getBusinessOrmDashboard } from "@/lib/dashboard/ormDashboard";
 
@@ -213,6 +214,9 @@ export default async function BusinessOrmDashboardPage({ params }: PageProps) {
         initialPhone={data.business.phone}
         replyMode={data.business.replyMode}
       />
+      {auth.user.role === "superadmin" ? (
+        <SuperAdminGoogleProfileEditor businessId={data.business.id} />
+      ) : null}
     </div>
   );
 }

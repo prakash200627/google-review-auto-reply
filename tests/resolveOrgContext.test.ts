@@ -29,7 +29,7 @@ vi.mock("@/models/Organization", () => ({
   Organization: { findById: organizationFindByIdMock },
 }));
 
-import { resolveAuthorizedOrgId } from "@/lib/auth/resolveOrgContext";
+import { assertSuperAdminActiveOrgMatches, resolveAuthorizedOrgId } from "@/lib/auth/resolveOrgContext";
 
 const ORG = new mongoose.Types.ObjectId().toString();
 const BIZ = new mongoose.Types.ObjectId().toString();
@@ -123,6 +123,21 @@ describe("resolveAuthorizedOrgId", () => {
       })
     ).resolves.toBeNull();
     expect(businessFindMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid or inaccessible signed org selection for Super Admin", async () => {
+    const invalidOrInaccessibleOrg = new mongoose.Types.ObjectId().toString();
+    readOrganizationIdMock.mockResolvedValue(invalidOrInaccessibleOrg);
+    organizationFindByIdMock.mockReturnValue({
+      select: () => ({ lean: async () => null }),
+    });
+
+    await expect(
+      assertSuperAdminActiveOrgMatches(
+        { userId: USER, role: "superadmin", email: "admin@example.com", businessIds: [] },
+        ORG
+      )
+    ).resolves.toMatchObject({ ok: false, status: 403, code: "org_required" });
   });
 
   it("falls back to org via groupIds when businessIds are empty", async () => {

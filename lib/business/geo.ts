@@ -13,6 +13,14 @@ export function normalizeCoordinates(input: {
   latitude: unknown;
   longitude: unknown;
 }): { latitude: number; longitude: number } {
+  if (
+    input.latitude === null || input.latitude === undefined ||
+    (typeof input.latitude === "string" && !input.latitude.trim()) ||
+    input.longitude === null || input.longitude === undefined ||
+    (typeof input.longitude === "string" && !input.longitude.trim())
+  ) {
+    throw new GeoValidationError("Latitude and longitude must both be provided.");
+  }
   const latitude = Number(input.latitude);
   const longitude = Number(input.longitude);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
@@ -31,6 +39,12 @@ export function normalizeCoordinates(input: {
 }
 
 export function normalizeAddressLine(raw: unknown): string {
-  const address = String(raw || "").trim().slice(0, 500);
+  if (typeof raw !== "string") {
+    throw new GeoValidationError("Address must be a string.", "invalid_address");
+  }
+  const address = raw.trim();
+  if (address.length > 500) {
+    throw new GeoValidationError("Address must be 500 characters or fewer.", "invalid_address");
+  }
   return address;
 }

@@ -68,7 +68,7 @@ First Super Admin: empty `users` collection + `SUPERADMIN_EMAIL` / `SUPERADMIN_P
 
 1. Complete `PRODUCTION_ENVIRONMENT.md` secrets on the host.  
 2. Verify Atlas backup (`BACKUP_AND_RECOVERY.md`).  
-3. Follow `PRODUCTION_DEPLOYMENT.md` (do not deploy until external credentials are verified).  
+3. Follow `PRODUCTION_DEPLOYMENT.md` (do not deploy until external credentials are verified). For Vercel, set Root Directory to the repository root (clear the field or set `.`), not `frontend`.
 4. Run `SECURITY_CHECKLIST.md`.
 
 ---
@@ -100,6 +100,9 @@ First Super Admin: empty `users` collection + `SUPERADMIN_EMAIL` / `SUPERADMIN_P
 - Central platform Google connection (SA).  
 - Discover → assign one location per business.  
 - Sync/publish are explicit; auto-publish kill switch default OFF.  
+- Super Admins can load and edit the assigned Google profile from `/orm/business/[id]`; publishing requires confirmation and `ALLOW_LIVE_GBP_PROFILE_WRITES=true`. The editor uses the scoped business/org Google connection and never changes TRONX business data.
+- Business Admins retain TRONX-only contact/address/coordinate editing and cannot load or publish Google profile fields. Coordinates and service-area data remain outside the Google editor.
+- Google profile writes use complete phone/category groups, structured storefront address, website, title, regular hours, and special hours. A profile fingerprint detects changes since load; a successful PATCH is read back when possible.
 - Never disconnect or publish during routine QA unless authorized.
 
 ## 9. Known limitations
@@ -107,6 +110,7 @@ First Super Admin: empty `users` collection + `SUPERADMIN_EMAIL` / `SUPERADMIN_P
 - Auto-publish enqueue/scheduler not a production default.  
 - No payment gateway — manual plan/payment records.  
 - No dedicated `/api/health` route.  
+- Login and draft rate limits are process-local; multi-instance deployments enforce them independently per instance.
 - Live GBP profile/photo writes gated by env flags.  
 - Hosting platform (Vercel vs VM) is operator-chosen; see deployment doc.
 

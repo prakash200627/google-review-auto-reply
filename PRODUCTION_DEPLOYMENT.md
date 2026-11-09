@@ -5,14 +5,27 @@
 | Item | Value |
 | --- | --- |
 | Framework | Next.js **16.4.x** (App Router, `next build --webpack`) |
-| Node.js | **≥ 20.9** (`package.json` `engines`) |
+| Node.js | **22.x** on Vercel (the package supports **≥ 20.9**) |
 | Build | `npm run build` |
 | Start | `npm run start` (`next start`) |
 | Package manager | npm (`package-lock.json`) |
 | Database | MongoDB with **replica set** (Atlas recommended) |
 | Hosting shape | Any Node host that runs `next start` (VM, container, PaaS). **Not** a static-only export. |
 
-This repo does **not** include a committed Dockerfile, Vercel/Railway project file, or infrastructure-as-code. Choose a Node 20+ host that can:
+The Next.js application and `package.json` are at the repository root. There is no `frontend/` directory. The root `vercel.json` selects the Next.js framework; Vercel's **Root Directory** project setting must also point to the repository root (clear the field or set it to `.`).
+
+For Vercel, configure these Project Settings:
+
+| Setting | Value |
+| --- | --- |
+| Root Directory | Clear the field or set to `.` (repository root; **not** `frontend`) |
+| Framework Preset | Next.js |
+| Install Command | `npm ci` |
+| Build Command | `npm run build` |
+| Output Directory | Default (leave the override empty) |
+| Node.js Version | `22.x` |
+
+Other hosts can use Node 20.9+ and must:
 
 1. Inject production environment variables (see `PRODUCTION_ENVIRONMENT.md`)
 2. Reach MongoDB Atlas (network allowlist)
@@ -58,7 +71,7 @@ This repo does **not** include a committed Dockerfile, Vercel/Railway project fi
 
 | Platform | Fit | Notes |
 | --- | --- | --- |
-| Vercel | Compatible with Next.js | Set env in project settings; use Node 20; ensure serverless function limits OK for Google API + Mongo; configure Atlas IP access for Vercel egress |
+| Vercel | Compatible with Next.js | Apply the Project Settings above; set env in project settings; ensure serverless function limits OK for Google API + Mongo; configure Atlas IP access for Vercel egress |
 | Railway / Render / Fly.io | Good fit for `next start` | Persistent process; set health check to `/login` or `/` |
 | Bare VM (systemd) | Good fit | Use process manager; nginx TLS; firewall Mongo egress only |
 
@@ -87,3 +100,5 @@ There is no dedicated `/api/health` route in this codebase. Use:
 
 - Process liveness: HTTP 200 on `/login` or `/`
 - Dependency: Atlas metrics + application error logs
+
+Login and draft-generation rate limits use in-memory counters per Node process. On Vercel or another multi-instance/serverless deployment, instances do not share counters, so the effective limit is per instance; use a shared rate-limit store if a deployment-wide limit is required.

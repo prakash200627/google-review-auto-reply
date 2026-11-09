@@ -42,9 +42,9 @@ export function OwnerBusinessPanel({
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTone, setMessageTone] = useState<"success" | "warning" | "info">("success");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [liveWrites, setLiveWrites] = useState(false);
 
   async function loadSettingsPermissions() {
     try {
@@ -78,7 +78,6 @@ export function OwnerBusinessPanel({
       );
       const data = (await res.json()) as {
         success?: boolean;
-        liveGoogleWritesAllowed?: boolean;
         tronx?: {
           phone?: string;
           address?: string;
@@ -87,7 +86,6 @@ export function OwnerBusinessPanel({
         };
       };
       if (res.ok && data.success) {
-        setLiveWrites(Boolean(data.liveGoogleWritesAllowed));
         if (data.tronx?.phone) setPhone(data.tronx.phone);
         if (typeof data.tronx?.address === "string") {
           setAddress(data.tronx.address);
@@ -109,6 +107,7 @@ export function OwnerBusinessPanel({
     setBusy(true);
     setError(null);
     setMessage(null);
+    setMessageTone("success");
     try {
       const res = await fetch(
         `/api/business/${encodeURIComponent(businessId)}/settings`,
@@ -134,6 +133,7 @@ export function OwnerBusinessPanel({
         return;
       }
       setMessage(data.message || "Settings saved");
+      setMessageTone("success");
     } catch {
       setError("Could not save settings");
     } finally {
@@ -141,10 +141,11 @@ export function OwnerBusinessPanel({
     }
   }
 
-  async function saveProfile(pushGoogle: boolean) {
+  async function saveProfile() {
     setBusy(true);
     setError(null);
     setMessage(null);
+    setMessageTone("success");
     try {
       const res = await fetch(
         `/api/business/${encodeURIComponent(businessId)}/profile`,
@@ -156,30 +157,21 @@ export function OwnerBusinessPanel({
             address,
             latitude: latitude === "" ? undefined : Number(latitude),
             longitude: longitude === "" ? undefined : Number(longitude),
-            pushPhoneToGoogle: pushGoogle,
-            pushGeoToGoogle: pushGoogle,
-            confirmLiveGoogleUpdate: pushGoogle,
+            pushGeoToGoogle: false,
           }),
         }
       );
       const data = (await res.json()) as {
         success?: boolean;
         message?: string;
-        google?: { applied?: boolean; skippedReason?: string };
+        local?: { applied?: boolean; status?: string };
       };
       if (!res.ok || !data.success) {
         setError(data.message || "Could not save profile");
         return;
       }
-      setMessage(
-        data.google?.applied
-          ? data.message || "Google update confirmed."
-          : `${data.message || "Saved locally."}${
-              data.google?.skippedReason
-                ? ` (${data.google.skippedReason})`
-                : ""
-            }`
-      );
+      setMessage(data.message || "TRONX profile saved.");
+      setMessageTone(data.local?.applied ? "success" : "info");
     } catch {
       setError("Could not save profile");
     } finally {
@@ -286,8 +278,7 @@ export function OwnerBusinessPanel({
               placeholder="+9198…"
             />
             <span className="mt-1 block text-xs text-zinc-500">
-              Stored in TRONX. Separate from Google Business Profile until you
-              explicitly push (requires server allow-list).
+              Stored in TRONX and separate from Google Business Profile.
             </span>
           </label>
           {error && (
@@ -296,7 +287,13 @@ export function OwnerBusinessPanel({
             </p>
           )}
           {message && (
-            <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            <p className={`rounded-md px-3 py-2 text-sm ${
+              messageTone === "warning"
+                ? "border border-amber-300 bg-amber-50 text-amber-950"
+                : messageTone === "info"
+                  ? "border border-zinc-300 bg-zinc-50 text-zinc-800"
+                  : "bg-emerald-50 text-emerald-800"
+            }`}>
               {message}
             </p>
           )}
@@ -312,12 +309,11 @@ export function OwnerBusinessPanel({
 
       <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold tracking-tight">
-          Location &amp; Google profile
+          TRONX location data
         </h2>
         <p className="mt-1 text-sm text-zinc-600">
-          Edit TRONX address/coordinates for this outlet. Live Google updates
-          stay off unless the server sets ALLOW_LIVE_GBP_PROFILE_WRITES=true
-          {liveWrites ? " (currently enabled)." : " (currently disabled)."}
+          Edit the internal TRONX address and coordinates for this outlet. These
+          values are separate from the Google Business Profile.
         </p>
         <div className="mt-3 space-y-3">
           <button
@@ -358,32 +354,10 @@ export function OwnerBusinessPanel({
             <button
               type="button"
               disabled={busy}
-              onClick={() => void saveProfile(false)}
+              onClick={() => void saveProfile()}
               className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50"
             >
-              Save TRONX only
-            </button>
-            <button
-              type="button"
-              disabled={busy || !liveWrites}
-              title={
-                liveWrites
-                  ? "Pushes phone and geo to Google after confirmation"
-                  : "Blocked until ALLOW_LIVE_GBP_PROFILE_WRITES=true"
-              }
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    "Push phone and coordinates to Google Business Profile? Only continue with explicit approval on a test location."
-                  )
-                ) {
-                  return;
-                }
-                void saveProfile(true);
-              }}
-              className="rounded-md border border-amber-400 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-950 disabled:opacity-50"
-            >
-              Push to Google (gated)
+              Save TRONX location data
             </button>
           </div>
         </div>
